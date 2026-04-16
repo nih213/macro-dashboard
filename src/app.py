@@ -880,7 +880,8 @@ st.divider()
 # ── METHODOLOGY ──────────────────────────────────────────────────────────────
 with st.expander("About the model & improvements applied"):
     # Methodology disclaimer
-    last_built_str = last_built if last_built else "unknown"
+    from datetime import datetime as _dt
+    last_built_str = last_built or _dt.fromtimestamp(_mtime).strftime("%Y-%m-%d")
     st.markdown(
         f"<div style='padding:14px 16px; border-radius:8px; background:#fefce8; "
         f"border:1px solid #fde68a; margin-bottom:16px; font-size:13px; color:#78350f'>"
