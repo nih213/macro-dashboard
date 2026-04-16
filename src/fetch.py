@@ -36,8 +36,7 @@ SERIES = {
     "mfg_trade":   "CMRMTSPL",        # Real mfg & trade industries sales (CEI component) — starts 1967
     "sentiment":   "UMCSENT",         # University of Michigan consumer sentiment — starts 1952
     "fedfunds":    "FEDFUNDS",        # Federal Funds Rate — monetary policy stance — starts 1954
-    "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR — starts 1947
-    "alcohol_pce": "DAOPRA3A086NBEA", # Real PCE: alcoholic beverages — lipstick-effect proxy — starts 1959
+    "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR and inflation feature — starts 1947
     "recession":   "USREC",           # NBER recession indicator: 1 = recession, 0 = expansion
 }
 

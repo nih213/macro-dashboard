@@ -172,7 +172,7 @@ FEATURE_LABELS = {
     "yield_momentum":    "Yield Curve Momentum",
     "stress_breadth":    "Stress Breadth (0–7)",
     "vci_signal":        "VCI Signal (Zandi)",
-    "alcohol_pce_chg":   "Alcohol PCE Δ",
+    "cpi_yoy":           "CPI Inflation (YoY)",
 }
 
 SIGNAL_THRESHOLDS = {
@@ -193,7 +193,7 @@ SIGNAL_THRESHOLDS = {
     "yield_momentum":     (0,           "No change"),
     "stress_breadth":     (5,           "High stress (5+ signals)"),
     "vci_signal":         (1,           "Zandi threshold (1 pp)"),
-    "alcohol_pce_chg":    (0,           "No growth (rising = lipstick stress signal)"),
+    "cpi_yoy":            (4,           "High inflation threshold (~4%)"),
 }
 
 
@@ -745,7 +745,8 @@ if scaler_params:
         "Credit markets":  ["credit_spread", "financial_stress"],
         "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "mfg_trade_chg", "real_activity"],
         "Labour":          ["payrolls_chg", "real_pi_chg", "stress_breadth"],
-        "Consumer":        ["sentiment_chg", "alcohol_pce_chg"],
+        "Consumer":        ["sentiment_chg"],
+        "Inflation":       ["cpi_yoy"],
         "Monetary policy": ["fedfunds_chg", "real_fedfunds"],
     }
     GROUP_COLORS = {
@@ -754,6 +755,7 @@ if scaler_params:
         "Real activity":   "#eab308",
         "Labour":          "#8b5cf6",
         "Consumer":        "#06b6d4",
+        "Inflation":       "#ec4899",
         "Monetary policy": "#f97316",
     }
 
@@ -863,9 +865,9 @@ signal_card(cols4[0], "real_pi_chg",    "Personal Income (ex-transfers)", f"{lat
 signal_card(cols4[1], "mfg_trade_chg",  "Mfg & Trade Sales",   f"{latest['mfg_trade_chg']:+.1f}% YoY",
             stress=latest["mfg_trade_chg"] < 0, importance=imp.get("mfg_trade_chg", 0),
             note="CEI component")
-signal_card(cols4[2], "alcohol_pce_chg", "Alcohol PCE",         f"{latest['alcohol_pce_chg']:+.1f}% YoY",
-            stress=latest["alcohol_pce_chg"] > 0, importance=imp.get("alcohol_pce_chg", 0),
-            note="Lipstick effect")
+signal_card(cols4[2], "cpi_yoy",         "CPI Inflation",        f"{latest['cpi_yoy']:+.1f}% YoY",
+            stress=latest["cpi_yoy"] > 4, importance=imp.get("cpi_yoy", 0),
+            note="High" if latest["cpi_yoy"] > 4 else "Normal")
 
 st.divider()
 
@@ -881,7 +883,7 @@ if data_freshness:
         "lfpr": "Labor Force Partic.", "permits": "Building Permits",
         "sp500": "DJIA", "payrolls": "Nonfarm Payrolls",
         "sentiment": "Consumer Sentiment", "fedfunds": "Fed Funds Rate",
-        "cpi": "CPI", "alcohol_pce": "Alcohol PCE", "recession": "NBER Recession",
+        "cpi": "CPI", "recession": "NBER Recession",
     }
 
     with st.expander("Data freshness"):
