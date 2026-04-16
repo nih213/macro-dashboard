@@ -321,14 +321,29 @@ with gauge_col:
         )
 
 with summary_col:
-    # 12-month probability trend sparkline
+    # 12-month probability trend sparkline with color-coded segments
     recent = prob_series.tail(13)
     spark = go.Figure()
+
+    def _spark_color(v):
+        return "#ef4444" if v >= 40 else "#eab308" if v >= 20 else "#22c55e"
+
+    # One trace per segment so each can have its own color
+    for i in range(len(recent) - 1):
+        v1, v2 = float(recent.values[i]), float(recent.values[i + 1])
+        spark.add_trace(go.Scatter(
+            x=[recent.index[i], recent.index[i + 1]],
+            y=[v1, v2],
+            mode="lines",
+            line=dict(color=_spark_color(max(v1, v2)), width=2.5),
+            showlegend=False, hoverinfo="skip",
+        ))
+    # Markers with hover, colored per point
     spark.add_trace(go.Scatter(
         x=recent.index, y=recent.values,
-        mode="lines+markers",
-        line=dict(color=prob_color, width=2),
-        marker=dict(size=4, color=prob_color),
+        mode="markers",
+        marker=dict(size=5, color=[_spark_color(v) for v in recent.values]),
+        showlegend=False,
         hovertemplate="%{x|%b %Y}: %{y:.1f}%<extra></extra>",
     ))
     spark.add_hline(y=danger_threshold, line_dash="dash",
