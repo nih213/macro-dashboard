@@ -26,7 +26,8 @@ def load():
             c = pickle.load(f)
         return (c["prob_series"], c["oos_series"], c["recession"], c["latest"],
                 c["credit_mean"], c["importances"], c["perf_df"], c["targets"],
-                c["danger_threshold"], c["coefs"], c["intercept"], c["df_history"])
+                c["danger_threshold"], c["coefs"], c["intercept"], c["df_history"],
+                c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -68,7 +69,13 @@ def load():
     coefs        = dict(zip(FEATURES, model.coef_[0]))
     intercept    = float(model.intercept_[0])
 
-    return prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, targets, danger_threshold, coefs, intercept, df
+    current_scaled = scaler.transform(df[FEATURES].iloc[[-1]])[0]
+    contributions_fb = {FEATURES[i]: float(current_scaled[i] * model.coef_[0][i])
+                        for i in range(len(FEATURES))}
+
+    return (prob_series, oos_series, recession, latest, credit_mean, importances,
+            perf_df, targets, danger_threshold, coefs, intercept, df,
+            contributions_fb, None, None, None)
 
 
 def recession_periods(rec_series):
@@ -195,7 +202,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
             signal_dialog(feature_key)
 
 
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history = load()
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob = load()
 
 current_prob = prob_series.iloc[-1]
 latest_date  = prob_series.index[-1]
@@ -211,19 +218,103 @@ st.caption(
 prob_color = "#22c55e" if current_prob < 20 else "#eab308" if current_prob < 50 else "#ef4444"
 risk_label = "Low risk" if current_prob < 20 else "Elevated risk" if current_prob < 50 else "High risk"
 
-hero_col, _ = st.columns([1, 3])
-with hero_col:
-    st.markdown(
-        f"<div style='padding:20px 24px; border-radius:10px; background:#f8fafc;"
-        f"border:1px solid #e2e8f0; text-align:center'>"
-        f"<div style='font-size:12px; color:#94a3b8; text-transform:uppercase;"
-        f"letter-spacing:0.08em; margin-bottom:8px'>3-Month Recession Probability</div>"
-        f"<div style='font-size:56px; font-weight:800; color:{prob_color}; line-height:1'>"
-        f"{current_prob:.1f}%</div>"
-        f"<div style='font-size:13px; color:{prob_color}; margin-top:8px'>{risk_label}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
+gauge_col, summary_col = st.columns([1, 2])
+
+with gauge_col:
+    gauge_fig = go.Figure(go.Indicator(
+        mode="gauge+number" + ("+delta" if prev_prob is not None else ""),
+        value=current_prob,
+        **({"delta": {"reference": prev_prob, "suffix": " pp",
+                      "relative": False, "valueformat": ".1f"}} if prev_prob is not None else {}),
+        number={"suffix": "%", "font": {"size": 52, "color": prob_color}},
+        gauge={
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8",
+                     "tickvals": [0, 25, 50, 75, 100]},
+            "bar": {"color": prob_color, "thickness": 0.25},
+            "bgcolor": "white",
+            "borderwidth": 0,
+            "steps": [
+                {"range": [0, 20],              "color": "rgba(34,197,94,0.1)"},
+                {"range": [20, danger_threshold],"color": "rgba(234,179,8,0.1)"},
+                {"range": [danger_threshold, 60],"color": "rgba(249,115,22,0.1)"},
+                {"range": [60, 100],             "color": "rgba(239,68,68,0.12)"},
+            ],
+            "threshold": {
+                "line": {"color": "rgba(249,115,22,0.8)", "width": 2},
+                "thickness": 0.75,
+                "value": danger_threshold,
+            },
+        },
+        title={"text": f"3-Month Recession Probability<br><span style='font-size:13px;color:#94a3b8'>{risk_label}</span>",
+               "font": {"size": 14, "color": "#64748b"}},
+    ))
+    gauge_fig.update_layout(
+        height=280, margin=dict(l=20, r=20, t=30, b=10),
+        paper_bgcolor="white",
     )
+    st.plotly_chart(gauge_fig, use_container_width=True)
+
+with summary_col:
+    # Auto-generated plain-English summary
+    if contributions:
+        change = current_prob - prev_prob if prev_prob is not None else 0
+        if abs(change) < 0.5:
+            trend_phrase = "remained broadly stable"
+        elif change > 0:
+            trend_phrase = f"increased {change:.1f} pp"
+        else:
+            trend_phrase = f"decreased {abs(change):.1f} pp"
+
+        top_up   = max(contributions, key=lambda k: contributions[k])
+        top_down = min(contributions, key=lambda k: contributions[k])
+        if contributions[top_up] > 0:
+            driver_phrase = f"{FEATURE_LABELS.get(top_up, top_up)} is the primary upward pressure"
+        else:
+            driver_phrase = f"All signals are currently below baseline, led by {FEATURE_LABELS.get(top_down, top_down).lower()}"
+
+        if current_prob < 15:
+            context_phrase = "Conditions remain broadly consistent with continued expansion."
+        elif current_prob < danger_threshold:
+            context_phrase = f"Some stress signals are visible, but the probability remains below the historical danger zone ({danger_threshold}%)."
+        elif current_prob < 60:
+            context_phrase = f"At {current_prob:.1f}%, the model is above its historical danger zone — conditions warrant close monitoring."
+        else:
+            context_phrase = "Multiple indicators are simultaneously stressed — historically a strong recession precursor."
+
+        st.markdown(
+            f"<div style='padding:16px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; margin-bottom:16px'>"
+            f"<div style='font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px'>Monthly Update</div>"
+            f"<div style='font-size:14px; color:#334155; line-height:1.6'>"
+            f"Since last month, the 3-month recession probability has <strong>{trend_phrase}</strong>. "
+            f"{driver_phrase}. {context_phrase}"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    # Key drivers: top 3 signals by absolute contribution to current reading
+    if contributions:
+        top3 = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+        st.markdown(
+            "<div style='font-size:12px; color:#94a3b8; text-transform:uppercase; "
+            "letter-spacing:0.05em; margin-bottom:8px'>Top Drivers Right Now</div>",
+            unsafe_allow_html=True,
+        )
+        driver_cols = st.columns(3)
+        for i, (feat, contrib) in enumerate(top3):
+            arrow  = "▲" if contrib > 0 else "▼"
+            color  = "#ef4444" if contrib > 0 else "#22c55e"
+            label  = FEATURE_LABELS.get(feat, feat)
+            with driver_cols[i]:
+                st.markdown(
+                    f"<div style='padding:10px 12px; border-radius:8px; background:#f8fafc; "
+                    f"border-left:3px solid {color}; text-align:center'>"
+                    f"<div style='font-size:11px; color:#94a3b8; margin-bottom:4px'>{label}</div>"
+                    f"<div style='font-size:18px; font-weight:700; color:{color}'>"
+                    f"{arrow} {abs(contrib):.2f}</div>"
+                    f"<div style='font-size:10px; color:#94a3b8'>log-odds contribution</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
 # ── INTRODUCTION & MODEL FORMULA ─────────────────────────────────────────────
 st.markdown(
@@ -291,6 +382,13 @@ st.divider()
 fig = go.Figure()
 add_recession_shading(fig, recession)
 
+if nyfed_series is not None:
+    fig.add_trace(go.Scatter(
+        x=nyfed_series.index, y=nyfed_series.values,
+        mode="lines", name="Yield-curve only",
+        line=dict(color="rgba(16,185,129,0.5)", width=1.5, dash="dot"),
+        hovertemplate="%{x|%b %Y}: %{y:.1f}%<extra>Yield-curve only</extra>",
+    ))
 fig.add_trace(go.Scatter(
     x=oos_series.index, y=oos_series.values,
     mode="lines", name="OOS prediction (honest backtest)",
@@ -323,14 +421,21 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # Custom legend below the chart
+nyfed_legend = (
+    "<span><span style='display:inline-block; width:28px; height:0px; "
+    "border-top:2px dashed rgba(16,185,129,0.8); vertical-align:middle; margin-right:6px'></span>"
+    "Yield-curve only model</span>"
+) if nyfed_series is not None else ""
+
 st.markdown(
-    "<div style='display:flex; gap:28px; font-size:13px; color:#475569; margin-top:-8px'>"
+    "<div style='display:flex; gap:28px; font-size:13px; color:#475569; margin-top:-8px; flex-wrap:wrap'>"
     "<span><span style='display:inline-block; width:28px; height:0px; "
     "border-top:2px dashed #64748b; vertical-align:middle; margin-right:6px'></span>"
     "Out-of-sample prediction</span>"
     "<span><span style='display:inline-block; width:28px; height:3px; background:#2563eb; "
     "vertical-align:middle; margin-right:6px'></span>"
-    "Model prediction (in-sample)</span>"
+    "Full model (in-sample)</span>"
+    + nyfed_legend +
     "<span><span style='display:inline-block; width:16px; height:12px; "
     "background:rgba(180,180,180,0.5); vertical-align:middle; margin-right:6px'></span>"
     "NBER recession</span>"
@@ -396,6 +501,32 @@ with right:
         st.caption(
             f"During recession months: median predicted probability = **{rec_probs.median():.0f}%** · "
         )
+
+st.divider()
+
+# ── HISTORICAL ANALOGS ────────────────────────────────────────────────────────
+if analogs:
+    st.subheader("Historical Analogs")
+    st.caption(
+        "The three past months whose macro environment — across all 14 indicators — "
+        "most closely resembled today's. Lower distance = more similar."
+    )
+    acols = st.columns(3)
+    for i, analog in enumerate(analogs):
+        rec_color = "#ef4444" if analog["recession_12m"] else "#22c55e"
+        rec_text  = "Recession followed within 12m" if analog["recession_12m"] else "No recession within 12m"
+        with acols[i]:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center; height:160px'>"
+                f"<div style='font-size:18px; font-weight:700; color:#1e293b; margin-bottom:4px'>{analog['date']}</div>"
+                f"<div style='font-size:13px; color:#64748b; margin-bottom:8px'>Similarity distance: {analog['distance']:.2f}</div>"
+                f"<div style='font-size:22px; font-weight:700; color:#2563eb; margin-bottom:6px'>{analog['prob_then']:.1f}%</div>"
+                f"<div style='font-size:11px; color:#94a3b8; margin-bottom:8px'>model probability then</div>"
+                f"<div style='font-size:12px; font-weight:600; color:{rec_color}'>{rec_text}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
 st.divider()
 
@@ -473,4 +604,34 @@ Target variable: will the economy be in recession 3 months from now (NBER defini
 4. **Moody's Baa–Treasury credit spread** — Replaces the high-yield spread (only available
    from 1996). Baa-rated bonds are investment grade but near the boundary — their spread
    over Treasuries is sensitive to credit cycle turning points while going back to 1953.
+
+5. **Yield-curve only benchmark** — The green dotted line on the main chart is a logistic
+   regression using only the 10Y–3M yield spread. This approximates the NY Fed's published
+   probit model (Estrella & Mishkin 1998). Comparing it to the full 14-feature model shows
+   how much information the additional indicators add beyond the yield curve alone.
+
+6. **Historical analogs** — Euclidean distance across all 14 standardised features identifies
+   the past months most similar to the current macro configuration. When those periods were
+   followed by recessions, it provides additional context beyond the probability number alone.
+    """)
+
+st.divider()
+
+# ── EMAIL ALERTS ──────────────────────────────────────────────────────────────
+with st.expander("Set up email alerts"):
+    st.markdown("""
+The dashboard sends an automated email when the recession probability **crosses a threshold**
+(e.g. rises above 25% or drops back below it). Alerts are sent by the daily GitHub Actions job.
+
+**Setup — add these secrets to the GitHub repository** (Settings → Secrets → Actions):
+
+| Secret | Value |
+|---|---|
+| `SMTP_USER` | Gmail address to send from (e.g. `yourname@gmail.com`) |
+| `SMTP_PASSWORD` | Gmail App Password — generate at myaccount.google.com → Security → App passwords |
+| `ALERT_EMAILS` | Comma-separated recipient list (e.g. `friend1@gmail.com,friend2@gmail.com`) |
+| `ALERT_THRESHOLD` | Probability % that triggers an alert (default: `25`) |
+
+Once set, no code changes are needed. The job runs daily at 7 AM ET and fires an email only
+when the probability crosses the threshold — not on every run.
     """)

@@ -26,6 +26,14 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python src/build_cache.py
 
+      - name: Send alert email (on threshold crossing)
+        env:
+          SMTP_USER:        ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD:    ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAILS:     ${{ secrets.ALERT_EMAILS }}
+          ALERT_THRESHOLD:  ${{ secrets.ALERT_THRESHOLD }}
+        run: python src/send_alert.py
+
       - name: Commit updated cache
         run: |
           git config user.name  "github-actions[bot]"

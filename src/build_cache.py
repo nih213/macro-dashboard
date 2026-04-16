@@ -9,6 +9,8 @@ import pickle
 
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import precision_score, recall_score
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,7 +21,46 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 CACHE_PATH   = os.path.join(PROJECT_ROOT, "data", "cache.pkl")
 
 
+def compute_analogs(df, scaler, prob_series, recession, n=3):
+    """Find the n historical months most similar to today's macro environment."""
+    X_scaled = pd.DataFrame(
+        scaler.transform(df[FEATURES]),
+        index=df.index, columns=FEATURES
+    )
+    current = X_scaled.iloc[-1].values
+    # Exclude last 6 months to avoid near-trivial self-similarity
+    past = X_scaled.iloc[:-6]
+    dists = np.sqrt(((past.values - current) ** 2).sum(axis=1))
+    dist_series = pd.Series(dists, index=past.index)
+    top_dates = dist_series.nsmallest(n).index
+
+    analogs = []
+    for date in top_dates:
+        window = recession[
+            (recession.index > date) &
+            (recession.index <= date + pd.DateOffset(months=12))
+        ]
+        analogs.append({
+            "date": date.strftime("%B %Y"),
+            "distance": round(float(dist_series[date]), 2),
+            "recession_12m": bool(window.sum() > 0),
+            "prob_then": round(float(prob_series.get(date, 0)), 1),
+        })
+
+    return analogs
+
+
 def build():
+    # Read previous probability before overwriting cache (for threshold-crossing alerts)
+    prev_prob = None
+    if os.path.exists(CACHE_PATH):
+        try:
+            with open(CACHE_PATH, "rb") as f:
+                old = pickle.load(f)
+            prev_prob = float(old["prob_series"].iloc[-1])
+        except Exception:
+            pass
+
     print("Fetching data...")
     data = fetch_all()
 
@@ -30,7 +71,6 @@ def build():
     scaler, model = train(df)
 
     print("In-sample predictions...")
-    from sklearn.preprocessing import StandardScaler
     X_scaled    = scaler.transform(df[FEATURES])
     proba       = model.predict_proba(X_scaled)[:, 1] * 100
     prob_series = pd.Series(proba, index=df.index, name="prob")
@@ -60,12 +100,33 @@ def build():
     ]
     danger_threshold = int(candidate_thresholds[np.argmax(f1s)])
 
-    recession   = data["recession"].resample("ME").last().dropna()
-    latest      = df.iloc[-1]
-    credit_mean = df["credit_spread"].mean()
-    importances = feature_importances(model)
-    coefs       = dict(zip(FEATURES, model.coef_[0]))
-    intercept   = float(model.intercept_[0])
+    recession    = data["recession"].resample("ME").last().dropna()
+    latest       = df.iloc[-1]
+    credit_mean  = df["credit_spread"].mean()
+    importances  = feature_importances(model)
+    coefs        = dict(zip(FEATURES, model.coef_[0]))
+    intercept    = float(model.intercept_[0])
+
+    # Feature contributions: scaled_value × coefficient → contribution to log-odds
+    # Positive = pushing probability up; negative = pulling it down
+    current_scaled = scaler.transform(df[FEATURES].iloc[[-1]])[0]
+    contributions = {FEATURES[i]: float(current_scaled[i] * model.coef_[0][i])
+                     for i in range(len(FEATURES))}
+
+    # Historical analogs: 3 past macro environments most similar to today
+    print("Computing historical analogs...")
+    analogs = compute_analogs(df, scaler, prob_series, recession, n=3)
+
+    # Yield-curve-only model: approximates the NY Fed probit spec (Estrella & Mishkin 1998)
+    # Uses only the 10Y–3M spread — useful as a simpler benchmark on the main chart
+    sc_yc = StandardScaler()
+    X_yc  = sc_yc.fit_transform(df[["yield_spread"]])
+    m_yc  = LogisticRegression(random_state=42, max_iter=1000)
+    m_yc.fit(X_yc, df["target"])
+    nyfed_series = pd.Series(
+        m_yc.predict_proba(X_yc)[:, 1] * 100,
+        index=df.index, name="nyfed_approx"
+    )
 
     cache = dict(
         prob_series=prob_series,
@@ -80,16 +141,24 @@ def build():
         coefs=coefs,
         intercept=intercept,
         df_history=df,
+        scaler=scaler,
+        contributions=contributions,
+        analogs=analogs,
+        nyfed_series=nyfed_series,
+        prev_prob=prev_prob,
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
     with open(CACHE_PATH, "wb") as f:
         pickle.dump(cache, f)
 
+    prob = prob_series.iloc[-1]
     print(f"Cache saved to {CACHE_PATH}")
     print(f"  Dataset: {df.index[0].date()} to {df.index[-1].date()}  ({len(df)} rows)")
-    prob = prob_series.iloc[-1]
     print(f"  Current recession probability: {prob:.1f}%")
+    if prev_prob is not None:
+        print(f"  Previous probability: {prev_prob:.1f}%  (change: {prob - prev_prob:+.1f} pp)")
+    print(f"  Top analog: {analogs[0]['date']}  (recession followed: {analogs[0]['recession_12m']})")
 
 
 if __name__ == "__main__":
