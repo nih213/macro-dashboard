@@ -119,12 +119,13 @@ def build():
 
     # Yield-curve-only model: approximates the NY Fed probit spec (Estrella & Mishkin 1998)
     # Uses only the 10Y–3M spread — useful as a simpler benchmark on the main chart
+    df_train = df[df["target"].notna()]
     sc_yc = StandardScaler()
-    X_yc  = sc_yc.fit_transform(df[["yield_spread"]])
+    X_yc_train = sc_yc.fit_transform(df_train[["yield_spread"]])
     m_yc  = LogisticRegression(random_state=42, max_iter=1000)
-    m_yc.fit(X_yc, df["target"])
+    m_yc.fit(X_yc_train, df_train["target"])
     nyfed_series = pd.Series(
-        m_yc.predict_proba(X_yc)[:, 1] * 100,
+        m_yc.predict_proba(sc_yc.transform(df[["yield_spread"]]))[:, 1] * 100,
         index=df.index, name="nyfed_approx"
     )
 
