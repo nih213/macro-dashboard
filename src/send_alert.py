@@ -26,8 +26,17 @@ def send():
     recipients = [e.strip() for e in os.environ.get("ALERT_EMAILS", "").split(",") if e.strip()]
     threshold  = float(os.environ.get("ALERT_THRESHOLD", "25"))
 
+    # Merge subscribers file + env var override
+    subs_path = os.path.join(PROJECT_ROOT, "data", "subscribers.txt")
+    if os.path.exists(subs_path):
+        with open(subs_path) as f:
+            file_emails = [e.strip() for e in f if e.strip()]
+    else:
+        file_emails = []
+    recipients = list({*file_emails, *recipients})   # deduplicate
+
     if not smtp_user or not smtp_pass or not recipients:
-        print("Email alert skipped: SMTP_USER, SMTP_PASSWORD, or ALERT_EMAILS not set.")
+        print("Email alert skipped: SMTP_USER, SMTP_PASSWORD not set, or no subscribers.")
         return
 
     with open(CACHE_PATH, "rb") as f:

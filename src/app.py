@@ -1,5 +1,7 @@
 import sys
 import os
+import base64
+import requests
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -100,6 +102,38 @@ def add_recession_shading(fig, recession, label_first=True):
             annotation_position="top left",
             annotation_font_size=11, annotation_font_color="gray",
         )
+
+
+def subscribe_email(email: str, token: str, repo: str) -> str:
+    """Append email to data/subscribers.txt in the repo via GitHub API.
+    Returns: 'success' | 'already_subscribed' | 'error'
+    """
+    url     = f"https://api.github.com/repos/{repo}/contents/data/subscribers.txt"
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+
+    r = requests.get(url, headers=headers, timeout=10)
+    if r.status_code == 200:
+        current = base64.b64decode(r.json()["content"]).decode()
+        sha     = r.json()["sha"]
+    elif r.status_code == 404:
+        current, sha = "", None
+    else:
+        return "error"
+
+    emails = [e.strip().lower() for e in current.splitlines() if e.strip()]
+    if email in emails:
+        return "already_subscribed"
+
+    emails.append(email)
+    payload = {
+        "message": f"Subscribe: {email}",
+        "content": base64.b64encode(("\n".join(emails) + "\n").encode()).decode(),
+    }
+    if sha:
+        payload["sha"] = sha
+
+    r = requests.put(url, json=payload, headers=headers, timeout=10)
+    return "success" if r.status_code in (200, 201) else "error"
 
 
 FEATURE_LABELS = {
@@ -618,20 +652,33 @@ Target variable: will the economy be in recession 3 months from now (NBER defini
 st.divider()
 
 # ── EMAIL ALERTS ──────────────────────────────────────────────────────────────
-with st.expander("Set up email alerts"):
-    st.markdown("""
-The dashboard sends an automated email when the recession probability **crosses a threshold**
-(e.g. rises above 25% or drops back below it). Alerts are sent by the daily GitHub Actions job.
+st.subheader("Get Email Alerts")
+st.caption(
+    f"Enter your email to receive an alert when the recession probability "
+    f"crosses the historical danger zone ({danger_threshold}%)."
+)
 
-**Setup — add these secrets to the GitHub repository** (Settings → Secrets → Actions):
+with st.form("email_subscribe", clear_on_submit=True):
+    email_input = st.text_input("Email address", placeholder="you@example.com", label_visibility="collapsed")
+    submitted   = st.form_submit_button("Subscribe", use_container_width=False)
 
-| Secret | Value |
-|---|---|
-| `SMTP_USER` | Gmail address to send from (e.g. `yourname@gmail.com`) |
-| `SMTP_PASSWORD` | Gmail App Password — generate at myaccount.google.com → Security → App passwords |
-| `ALERT_EMAILS` | Comma-separated recipient list (e.g. `friend1@gmail.com,friend2@gmail.com`) |
-| `ALERT_THRESHOLD` | Probability % that triggers an alert (default: `25`) |
-
-Once set, no code changes are needed. The job runs daily at 7 AM ET and fires an email only
-when the probability crosses the threshold — not on every run.
-    """)
+if submitted:
+    email_clean = email_input.strip().lower()
+    if not email_clean or "@" not in email_clean or "." not in email_clean.split("@")[-1]:
+        st.warning("Please enter a valid email address.")
+    else:
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        repo  = st.secrets.get("GITHUB_REPO", "")
+        if not token or not repo:
+            st.info("Alert subscriptions are not enabled on this deployment.")
+        else:
+            try:
+                result = subscribe_email(email_clean, token, repo)
+                if result == "success":
+                    st.success("Subscribed. You'll receive an email when the probability crosses the danger zone.")
+                elif result == "already_subscribed":
+                    st.info("That address is already subscribed.")
+                else:
+                    st.error("Something went wrong — please try again later.")
+            except Exception:
+                st.error("Could not connect. Please try again later.")
