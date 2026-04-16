@@ -113,6 +113,27 @@ def build():
     contributions = {FEATURES[i]: float(current_scaled[i] * model.coef_[0][i])
                      for i in range(len(FEATURES))}
 
+    # Bootstrap 90% confidence interval on the current probability
+    # 500 resamples of the training data — captures parameter uncertainty
+    print("Bootstrap confidence interval (500 iterations)...")
+    df_train_ci = df[df["target"].notna()]
+    rng = np.random.default_rng(42)
+    boot_probs = []
+    X_latest = scaler.transform(df[FEATURES].iloc[[-1]])   # current features, main scaler
+    for _ in range(500):
+        idx = rng.integers(0, len(df_train_ci), size=len(df_train_ci))
+        X_b = df_train_ci.iloc[idx][FEATURES].values
+        y_b = df_train_ci.iloc[idx]["target"].values
+        sc_b = StandardScaler()
+        m_b  = LogisticRegression(random_state=None, max_iter=1000)
+        m_b.fit(sc_b.fit_transform(X_b), y_b)
+        boot_probs.append(
+            m_b.predict_proba(sc_b.transform(df[FEATURES].iloc[[-1]]))[0, 1] * 100
+        )
+    ci_lower = float(np.percentile(boot_probs, 5))
+    ci_upper = float(np.percentile(boot_probs, 95))
+    print(f"  90% CI: [{ci_lower:.1f}%, {ci_upper:.1f}%]")
+
     # Historical analogs: 3 past macro environments most similar to today
     print("Computing historical analogs...")
     analogs = compute_analogs(df, scaler, prob_series, recession, n=3)
@@ -156,6 +177,9 @@ def build():
         prev_prob=prev_prob,
         scaler_params=scaler_params,
         data_freshness=data_freshness,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        last_built=pd.Timestamp.now().strftime("%Y-%m-%d"),
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)

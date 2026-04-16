@@ -42,7 +42,8 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
                 c["credit_mean"], c["importances"], c["perf_df"], c["targets"],
                 c["danger_threshold"], c["coefs"], c["intercept"], c["df_history"],
                 c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"),
-                c.get("scaler_params"), c.get("data_freshness"))
+                c.get("scaler_params"), c.get("data_freshness"),
+                c.get("ci_lower"), c.get("ci_upper"), c.get("last_built"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -94,7 +95,7 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
 
     return (prob_series, oos_series, recession, latest, credit_mean, importances,
             perf_df, targets, danger_threshold, coefs, intercept, df,
-            contributions_fb, None, None, None, scaler_params_fb, None)
+            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None)
 
 
 def recession_periods(rec_series):
@@ -254,7 +255,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
 
 
 _mtime = os.path.getmtime(_CACHE_PATH) if os.path.exists(_CACHE_PATH) else 0
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness = load(_mtime)
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built = load(_mtime)
 
 current_prob  = prob_series.iloc[-1]
 latest_date   = prob_series.index[-1]
@@ -307,8 +308,43 @@ with gauge_col:
         paper_bgcolor="white",
     )
     st.plotly_chart(gauge_fig, use_container_width=True)
+    if ci_lower is not None and ci_upper is not None:
+        st.markdown(
+            f"<div style='text-align:center; font-size:13px; color:#64748b; margin-top:-16px'>"
+            f"90% confidence interval: <strong>{ci_lower:.1f}% – {ci_upper:.1f}%</strong>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
 with summary_col:
+    # 12-month probability trend sparkline
+    recent = prob_series.tail(13)
+    spark = go.Figure()
+    spark.add_trace(go.Scatter(
+        x=recent.index, y=recent.values,
+        mode="lines+markers",
+        line=dict(color=prob_color, width=2),
+        marker=dict(size=4, color=prob_color),
+        hovertemplate="%{x|%b %Y}: %{y:.1f}%<extra></extra>",
+    ))
+    spark.add_hline(y=danger_threshold, line_dash="dash",
+                    line_color="rgba(249,115,22,0.5)",
+                    annotation_text=f"Danger zone ({danger_threshold}%)",
+                    annotation_position="right",
+                    annotation_font_size=10,
+                    annotation_font_color="rgba(249,115,22,0.8)")
+    spark.update_layout(
+        height=130,
+        margin=dict(l=0, r=70, t=4, b=0),
+        xaxis=dict(showgrid=False, tickformat="%b '%y", tickangle=-30, tickfont=dict(size=10)),
+        yaxis=dict(range=[0, max(30, current_prob * 2)], showgrid=False,
+                   ticksuffix="%", tickfont=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        showlegend=False,
+    )
+    st.markdown("<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px'>12-Month Trend</div>", unsafe_allow_html=True)
+    st.plotly_chart(spark, use_container_width=True)
+
     # Auto-generated plain-English summary
     if contributions:
         change = current_prob - prev_prob if prev_prob is not None else 0
@@ -843,6 +879,23 @@ st.divider()
 
 # ── METHODOLOGY ──────────────────────────────────────────────────────────────
 with st.expander("About the model & improvements applied"):
+    # Methodology disclaimer
+    last_built_str = last_built if last_built else "unknown"
+    st.markdown(
+        f"<div style='padding:14px 16px; border-radius:8px; background:#fefce8; "
+        f"border:1px solid #fde68a; margin-bottom:16px; font-size:13px; color:#78350f'>"
+        f"<strong>Methodology disclaimer</strong><br>"
+        f"This is an independent analytical tool, not an official forecast. "
+        f"The model is a logistic regression, which assumes a <em>linear relationship</em> between "
+        f"each standardised indicator and the log-odds of recession — non-linear interactions "
+        f"are not captured. The 90% confidence interval reflects parameter uncertainty via "
+        f"bootstrap resampling (500 draws) but does not account for model misspecification or "
+        f"data revisions. Training window: January 1961 – present. "
+        f"Recession dates: NBER Business Cycle Dating Committee. "
+        f"Last model build: <strong>{last_built_str}</strong>."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown("""
 **Model:** Logistic regression trained on monthly U.S. macroeconomic data from 1961 onwards.
 Target variable: will the economy be in recession 3 months from now (NBER definition)?
