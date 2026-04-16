@@ -452,7 +452,7 @@ P\!\left(\text{recession}_{t+3}\right)
 \right)}}
 """)
 st.caption(
-    "All 14 inputs are standardised (zero mean, unit variance) before fitting, "
+    "All 17 inputs are standardised (zero mean, unit variance) before fitting, "
     "so coefficients are directly comparable in magnitude. "
     "β parameters are estimated by maximum likelihood on the full 1961–present sample."
 )
@@ -586,7 +586,7 @@ if nyfed_series is not None:
         "<strong>Yield-curve only model (green dotted).</strong> "
         "This single-feature benchmark approximates the NY Fed's published probit model "
         "(Estrella &amp; Mishkin 1998), which uses only the 10Y–3M Treasury spread. "
-        f"The full 14-feature model is {gap_phrase} "
+        f"The full 17-feature model is {gap_phrase} "
         "Historically, the gap widens most sharply when credit markets, labour, or monetary "
         "policy diverge from what the yield curve alone would imply — for example, "
         "2006–07, when the curve was inverted but credit spreads were still benign, "
@@ -743,8 +743,8 @@ if scaler_params:
     FEATURE_GROUPS = {
         "Yield curve":     ["yield_spread", "yield_momentum"],
         "Credit markets":  ["credit_spread", "financial_stress"],
-        "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "real_activity"],
-        "Labour":          ["payrolls_chg", "stress_breadth"],
+        "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "mfg_trade_chg", "real_activity"],
+        "Labour":          ["payrolls_chg", "real_pi_chg", "stress_breadth"],
         "Consumer":        ["sentiment_chg", "alcohol_pce_chg"],
         "Monetary policy": ["fedfunds_chg", "real_fedfunds"],
     }
@@ -788,7 +788,7 @@ st.divider()
 if analogs:
     st.subheader("Historical Analogs")
     st.caption(
-        "The three past months whose macro environment — across all 14 indicators — "
+        "The three past months whose macro environment — across all 17 indicators — "
         "most closely resembled today's. Lower distance = more similar."
     )
     acols = st.columns(3)
@@ -961,7 +961,7 @@ Target variable: will the economy be in recession 3 months from now (NBER defini
    probit model (Estrella & Mishkin 1998). Comparing it to the full 14-feature model shows
    how much information the additional indicators add beyond the yield curve alone.
 
-6. **Historical analogs** — Euclidean distance across all 14 standardised features identifies
+6. **Historical analogs** — Euclidean distance across all 17 standardised features identifies
    the past months most similar to the current macro configuration. When those periods were
    followed by recessions, it provides additional context beyond the probability number alone.
     """)
