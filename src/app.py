@@ -480,18 +480,43 @@ st.markdown(
 st.markdown(
     "<div style='margin-top:12px; padding:12px 16px; border-radius:8px; background:#f8fafc; "
     "border:1px solid #e2e8f0; font-size:13px; color:#475569'>"
-    "<strong>What is the out-of-sample prediction?</strong> "
-    "The solid blue line is the model trained on all available data — it has, in effect, "
-    "seen the entire history including past recessions when producing each estimate. "
-    "The dotted line is a stricter test: for each month, the model was re-trained using "
-    "only data that would have existed <em>at that point in time</em>, then asked to predict "
-    "the next three months. This simulates what a forecaster actually experiences in real time, "
-    "with no knowledge of future events. "
-    "A large gap between the two lines would indicate overfitting; "
-    "close agreement means the model generalises well out of sample."
+    "<strong>Out-of-sample prediction (grey dotted).</strong> "
+    "The solid blue line is trained on all available data — it has seen the entire history "
+    "including past recessions. The grey dotted line is a stricter test: for each month, "
+    "the model was re-trained using only data that existed <em>at that point in time</em>. "
+    "Close agreement between the two indicates the model generalises well and is not overfitting."
     "</div>",
     unsafe_allow_html=True,
 )
+
+if nyfed_series is not None:
+    # Compute how much the full model adds over the yield-curve-only benchmark right now
+    current_nyfed = nyfed_series.iloc[-1]
+    gap           = current_prob - current_nyfed
+    gap_phrase    = (
+        f"currently {gap:+.1f} pp <strong>above</strong> the yield-curve benchmark, "
+        "meaning the additional indicators are adding meaningful recession signal beyond the spread alone."
+        if gap > 2 else
+        f"currently {gap:+.1f} pp <strong>below</strong> the yield-curve benchmark, "
+        "meaning the broader indicator set is actually dampening the yield-curve's recession signal."
+        if gap < -2 else
+        "currently tracking <strong>close to the yield-curve benchmark</strong>, "
+        "meaning the yield spread is the dominant driver and additional indicators are adding little."
+    )
+    st.markdown(
+        "<div style='margin-top:8px; padding:12px 16px; border-radius:8px; background:#f0fdf4; "
+        "border:1px solid #bbf7d0; font-size:13px; color:#475569'>"
+        "<strong>Yield-curve only model (green dotted).</strong> "
+        "This single-feature benchmark approximates the NY Fed's published probit model "
+        "(Estrella &amp; Mishkin 1998), which uses only the 10Y–3M Treasury spread. "
+        f"The full 14-feature model is {gap_phrase} "
+        "Historically, the gap widens most sharply when credit markets, labour, or monetary "
+        "policy diverge from what the yield curve alone would imply — for example, "
+        "2006–07, when the curve was inverted but credit spreads were still benign, "
+        "or 2022–23, when the curve inverted sharply but the labour market remained strong."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 st.divider()
 
