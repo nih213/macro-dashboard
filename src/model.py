@@ -90,7 +90,9 @@ def build_dataset(data: dict) -> pd.DataFrame:
     df["target"] = df["recession"].shift(-3)
 
     df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "sentiment", "fedfunds", "cpi", "recession"])
-    df = df.dropna()
+    # Drop rows where features are NaN (start of series, rolling windows not filled yet).
+    # Keep rows where only target is NaN — those are the most recent months we predict on.
+    df = df.dropna(subset=[c for c in df.columns if c != "target"])
     return df
 
 
@@ -104,8 +106,9 @@ FEATURES = [
 
 def train(df: pd.DataFrame):
     """Fit a logistic regression. Returns (scaler, model)."""
-    X = df[FEATURES]
-    y = df["target"]
+    df_train = df[df["target"].notna()]   # exclude recent rows without a known outcome
+    X = df_train[FEATURES]
+    y = df_train["target"]
 
     scaler = StandardScaler()   # logistic regression needs scaled inputs
     X_scaled = scaler.fit_transform(X)
@@ -165,7 +168,9 @@ def walk_forward_predict(df: pd.DataFrame, min_train: int = 60) -> pd.Series:
     """Expanding-window OOS predictions. min_train = minimum months before first prediction."""
     results = {}
     for i in range(min_train, len(df)):
-        train = df.iloc[:i]
+        if pd.isna(df["target"].iloc[i]):   # no known outcome yet — skip for OOS eval
+            continue
+        train = df.iloc[:i][df.iloc[:i]["target"].notna()]   # train only on rows with known outcomes
         if train["target"].sum() < 5:   # need enough recession months to fit reliably
             continue
         sc = StandardScaler()

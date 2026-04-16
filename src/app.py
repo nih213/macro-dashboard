@@ -255,14 +255,16 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
 
 prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness = load()
 
-current_prob = prob_series.iloc[-1]
-latest_date  = prob_series.index[-1]
+current_prob  = prob_series.iloc[-1]
+latest_date   = prob_series.index[-1]
+forecast_date = latest_date + pd.DateOffset(months=3)
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 st.title("U.S. Recession Probability")
 st.caption(
-    f"3-month ahead forecast · Logistic regression · "
-    f"Data as of {latest_date.strftime('%B %Y')}"
+    f"Logistic regression · "
+    f"Data as of {latest_date.strftime('%B %Y')} · "
+    f"Probability of recession by {forecast_date.strftime('%B %Y')}"
 )
 
 # ── PROBABILITY HERO ──────────────────────────────────────────────────────────
@@ -296,7 +298,7 @@ with gauge_col:
                 "value": danger_threshold,
             },
         },
-        title={"text": f"3-Month Recession Probability<br><span style='font-size:13px;color:#94a3b8'>{risk_label}</span>",
+        title={"text": f"Recession Probability by {forecast_date.strftime('%b %Y')}<br><span style='font-size:13px;color:#94a3b8'>{risk_label}</span>",
                "font": {"size": 14, "color": "#64748b"}},
     ))
     gauge_fig.update_layout(
