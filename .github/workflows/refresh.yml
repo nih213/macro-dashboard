@@ -29,6 +29,7 @@ jobs:
         run: python src/build_cache.py
 
       - name: Send alert email (on threshold crossing)
+        continue-on-error: true
         env:
           SMTP_USER:        ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD:    ${{ secrets.SMTP_PASSWORD }}
