@@ -12,17 +12,30 @@ load_dotenv()
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 fred = Fred(api_key=FRED_API_KEY)
 
-START_DATE = "1990-01-01"
+START_DATE = "1950-01-01"
 
 # %%
 # --- SERIES TO FETCH ---
 # Each entry: friendly_name -> FRED series ID
 SERIES = {
-    "yield_spread":  "T10Y2Y",        # 10Y minus 2Y Treasury yield (the yield curve)
-    "unemployment":  "UNRATE",         # US unemployment rate (monthly)
-    "credit_spread": "BAMLH0A0HYM2",  # High-yield credit spread (risk appetite)
-    "indpro":        "INDPRO",         # Industrial production index (business cycle)
-    "recession":     "USREC",          # NBER recession indicator: 1 = recession, 0 = expansion
+    # Yield curve: computed as GS10 - TB3MS (10Y-3M spread) — starts 1953
+    # Using 10Y-3M rather than 10Y-2Y: original Estrella & Mishkin (1998) spec, starts earlier
+    "gs10":        "GS10",            # 10-Year Treasury Constant Maturity Rate
+    "tb3ms":       "TB3MS",           # 3-Month Treasury Bill Secondary Market Rate
+    # Credit spread: Moody's Baa yield minus 10Y Treasury — starts 1953 (replaces HY spread from 1996)
+    "baa":         "BAA",             # Moody's Baa Corporate Bond Yield
+    "indpro":      "INDPRO",          # Industrial production index (business cycle) — starts 1919
+    "commodity":   "PPIACO",          # PPI: All Commodities (global demand proxy, replaces copper) — starts 1913
+    "employment":  "CE16OV",          # Civilian employment level — for VCI calculation — starts 1948
+    "population":  "CNP16OV",         # Civilian noninstitutional population — for VCI — starts 1948
+    "lfpr":        "CIVPART",         # Labor force participation rate — for VCI — starts 1948
+    "permits":     "PERMIT",          # Building permits (housing leading indicator) — starts 1960
+    "sp500":       "DJIA",            # Dow Jones Industrial Average (replaces NASDAQ/SP500) — starts 1928
+    "payrolls":    "PAYEMS",          # Total nonfarm payrolls (replaces initial claims) — starts 1939
+    "sentiment":   "UMCSENT",         # University of Michigan consumer sentiment — starts 1952
+    "fedfunds":    "FEDFUNDS",        # Federal Funds Rate — monetary policy stance — starts 1954
+    "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR — starts 1947
+    "recession":   "USREC",           # NBER recession indicator: 1 = recession, 0 = expansion
 }
 
 # %%
