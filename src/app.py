@@ -14,6 +14,18 @@ from model import build_dataset, train, FEATURES, feature_importances, walk_forw
 
 st.set_page_config(page_title="US Recession Probability", layout="wide")
 
+st.markdown("""
+<style>
+@media (max-width: 640px) {
+    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: min(100%, 260px) !important;
+        flex: 1 1 260px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 import pickle
 
@@ -29,7 +41,8 @@ def load():
         return (c["prob_series"], c["oos_series"], c["recession"], c["latest"],
                 c["credit_mean"], c["importances"], c["perf_df"], c["targets"],
                 c["danger_threshold"], c["coefs"], c["intercept"], c["df_history"],
-                c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"))
+                c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"),
+                c.get("scaler_params"), c.get("data_freshness"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -75,9 +88,13 @@ def load():
     contributions_fb = {FEATURES[i]: float(current_scaled[i] * model.coef_[0][i])
                         for i in range(len(FEATURES))}
 
+    current_scaled = scaler.transform(df[FEATURES].iloc[[-1]])[0]
+    scaler_params_fb = {FEATURES[i]: {"mean": float(scaler.mean_[i]), "scale": float(scaler.scale_[i])}
+                        for i in range(len(FEATURES))}
+
     return (prob_series, oos_series, recession, latest, credit_mean, importances,
             perf_df, targets, danger_threshold, coefs, intercept, df,
-            contributions_fb, None, None, None)
+            contributions_fb, None, None, None, scaler_params_fb, None)
 
 
 def recession_periods(rec_series):
@@ -236,7 +253,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
             signal_dialog(feature_key)
 
 
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob = load()
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness = load()
 
 current_prob = prob_series.iloc[-1]
 latest_date  = prob_series.index[-1]
@@ -520,6 +537,62 @@ if nyfed_series is not None:
 
 st.divider()
 
+# ── WHAT-IF SCENARIO TOOL ─────────────────────────────────────────────────────
+with st.expander("What-If Scenario Analysis", expanded=False):
+    st.caption(
+        "Adjust the five most influential indicators and see how the recession probability "
+        "would change, holding all other signals at their current readings."
+    )
+    if scaler_params:
+        top5 = sorted(FEATURES, key=lambda f: abs(coefs[f]), reverse=True)[:5]
+        sl_cols = st.columns(5)
+        overrides = {}
+        for i, feat in enumerate(top5):
+            lo  = float(df_history[feat].quantile(0.05))
+            hi  = float(df_history[feat].quantile(0.95))
+            cur = float(max(lo, min(hi, latest[feat])))
+            stp = round((hi - lo) / 100, 3) or 0.001
+            with sl_cols[i]:
+                overrides[feat] = st.slider(
+                    FEATURE_LABELS.get(feat, feat),
+                    min_value=lo, max_value=hi, value=cur, step=stp,
+                    key=f"wi_{feat}",
+                )
+
+        log_odds = intercept
+        for feat in FEATURES:
+            val = overrides.get(feat, float(latest[feat]))
+            z   = (val - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
+            log_odds += coefs[feat] * z
+        wi_prob  = 1 / (1 + np.exp(-log_odds)) * 100
+        wi_color = "#22c55e" if wi_prob < 20 else "#eab308" if wi_prob < 50 else "#ef4444"
+        delta    = wi_prob - current_prob
+
+        wc1, wc2, _ = st.columns([1, 1, 2])
+        with wc1:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; margin-bottom:4px'>Scenario</div>"
+                f"<div style='font-size:40px; font-weight:800; color:{wi_color}'>{wi_prob:.1f}%</div>"
+                f"<div style='font-size:13px; color:{'#ef4444' if delta > 0 else '#22c55e' if delta < 0 else '#94a3b8'}'>"
+                f"{'▲' if delta > 0 else '▼' if delta < 0 else '—'} {abs(delta):.1f} pp vs current</div>"
+                f"</div>", unsafe_allow_html=True,
+            )
+        with wc2:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; margin-bottom:4px'>Current</div>"
+                f"<div style='font-size:40px; font-weight:800; color:{prob_color}'>{current_prob:.1f}%</div>"
+                f"<div style='font-size:13px; color:#94a3b8'>baseline</div>"
+                f"</div>", unsafe_allow_html=True,
+            )
+    else:
+        st.info("Rebuild the cache to enable scenario analysis.")
+
+st.divider()
+
 # ── MODEL PERFORMANCE ────────────────────────────────────────────────────────
 st.subheader("Historical Model Performance")
 
@@ -558,8 +631,96 @@ with right:
 
     if len(rec_probs) > 0:
         st.caption(
-            f"During recession months: median predicted probability = **{rec_probs.median():.0f}%** · "
+            f"During recession months: median predicted probability = **{rec_probs.median():.0f}%**"
         )
+
+# Calibration plot — full width below the two columns
+st.markdown("**Calibration** — are the predicted probabilities reliable?")
+st.caption("Each dot = one 10pp bin. Points on the diagonal = perfectly calibrated. Dot size = number of months in that bin.")
+
+bin_edges = np.arange(0, 101, 10)
+bin_mids, actuals, n_counts = [], [], []
+for lo, hi in zip(bin_edges[:-1], bin_edges[1:]):
+    mask = (oos_series >= lo) & (oos_series < hi)
+    if mask.sum() >= 3:
+        bin_mids.append(float((lo + hi) / 2))
+        actuals.append(float(oos_targets[mask].mean() * 100))
+        n_counts.append(int(mask.sum()))
+
+cal_fig = go.Figure()
+cal_fig.add_trace(go.Scatter(
+    x=[0, 100], y=[0, 100], mode="lines",
+    line=dict(dash="dash", color="rgba(0,0,0,0.2)", width=1),
+    showlegend=False, hoverinfo="skip",
+))
+cal_fig.add_trace(go.Scatter(
+    x=bin_mids, y=actuals, mode="markers+lines",
+    marker=dict(size=[max(7, c // 3) for c in n_counts], color="#2563eb",
+                line=dict(color="white", width=1)),
+    line=dict(color="#2563eb", width=2),
+    hovertemplate="Predicted: %{x:.0f}%<br>Actual: %{y:.1f}%<br>n = %{text}<extra></extra>",
+    text=n_counts, showlegend=False,
+))
+cal_fig.update_layout(
+    height=280,
+    xaxis=dict(title="Predicted probability (%)", range=[0, 100], gridcolor="rgba(0,0,0,0.07)"),
+    yaxis=dict(title="Actual recession frequency (%)", range=[0, 100], gridcolor="rgba(0,0,0,0.07)"),
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=10, b=0),
+)
+st.plotly_chart(cal_fig, use_container_width=True)
+
+st.divider()
+
+# ── FACTOR ATTRIBUTION ────────────────────────────────────────────────────────
+if scaler_params:
+    st.subheader("What Has Been Driving the Probability?")
+    st.caption(
+        "Log-odds contribution of each macro channel over the past 24 months. "
+        "Bars above zero push the probability up; bars below push it down."
+    )
+
+    FEATURE_GROUPS = {
+        "Yield curve":     ["yield_spread", "yield_momentum"],
+        "Credit markets":  ["credit_spread", "financial_stress"],
+        "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "real_activity"],
+        "Labour":          ["payrolls_chg", "stress_breadth"],
+        "Consumer":        ["sentiment_chg"],
+        "Monetary policy": ["fedfunds_chg", "real_fedfunds"],
+    }
+    GROUP_COLORS = {
+        "Yield curve":     "#2563eb",
+        "Credit markets":  "#ef4444",
+        "Real activity":   "#eab308",
+        "Labour":          "#8b5cf6",
+        "Consumer":        "#06b6d4",
+        "Monetary policy": "#f97316",
+    }
+
+    recent = df_history[FEATURES].tail(24)
+    attr_fig = go.Figure()
+    for group_name, feats in FEATURE_GROUPS.items():
+        contrib = pd.Series(0.0, index=recent.index)
+        for feat in feats:
+            if feat in recent.columns and feat in scaler_params:
+                z = (recent[feat] - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
+                contrib += z * coefs[feat]
+        attr_fig.add_trace(go.Bar(
+            x=recent.index, y=contrib.values,
+            name=group_name, marker_color=GROUP_COLORS[group_name],
+            hovertemplate="%{x|%b %Y}: %{y:+.2f}<extra>" + group_name + "</extra>",
+        ))
+    attr_fig.update_layout(
+        barmode="relative", height=340,
+        xaxis=dict(showgrid=False),
+        yaxis=dict(title="Log-odds contribution", gridcolor="rgba(0,0,0,0.07)", zeroline=True,
+                   zerolinecolor="rgba(0,0,0,0.2)"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=0, r=0, t=10, b=0),
+        legend=dict(orientation="h", y=-0.18, x=0),
+        hovermode="x unified",
+    )
+    st.plotly_chart(attr_fig, use_container_width=True)
 
 st.divider()
 
@@ -633,6 +794,47 @@ signal_card(cols3[2], "stress_breadth", "Stress Breadth",          f"{latest['st
 signal_card(cols3[3], "financial_stress","Financial Stress Index",  f"{latest['financial_stress']:+.2f} pp",
             stress=latest["financial_stress"] > 0, importance=imp.get("financial_stress", 0),
             note="Tight" if latest["financial_stress"] > 0 else "Loose")
+
+st.divider()
+
+# ── DATA FRESHNESS ────────────────────────────────────────────────────────────
+if data_freshness:
+    from datetime import datetime as _dt
+    _now = _dt.now()
+
+    SERIES_LABELS = {
+        "gs10": "10Y Treasury", "tb3ms": "3M T-Bill", "baa": "Moody's Baa",
+        "indpro": "Industrial Prod.", "commodity": "PPI Commodities",
+        "employment": "Employment", "population": "Population",
+        "lfpr": "Labor Force Partic.", "permits": "Building Permits",
+        "sp500": "DJIA", "payrolls": "Nonfarm Payrolls",
+        "sentiment": "Consumer Sentiment", "fedfunds": "Fed Funds Rate",
+        "cpi": "CPI", "recession": "NBER Recession",
+    }
+
+    with st.expander("Data freshness"):
+        st.caption("Last observation date for each FRED series. Green = current month or last month; yellow = 2–3 months old; orange = older.")
+        fcols = st.columns(5)
+        for idx, (series, date_str) in enumerate(data_freshness.items()):
+            try:
+                dt = _dt.strptime(date_str, "%b %Y")
+                months_old = (_now.year - dt.year) * 12 + (_now.month - dt.month)
+                dot = "#22c55e" if months_old <= 1 else "#eab308" if months_old <= 3 else "#f97316"
+            except Exception:
+                dot = "#94a3b8"
+            lbl = SERIES_LABELS.get(series, series)
+            with fcols[idx % 5]:
+                st.markdown(
+                    f"<div style='padding:8px 10px; border-radius:6px; background:#f8fafc; "
+                    f"border:1px solid #e2e8f0; margin-bottom:6px'>"
+                    f"<div style='display:flex; align-items:center; gap:6px'>"
+                    f"<span style='width:8px; height:8px; border-radius:50%; background:{dot}; "
+                    f"display:inline-block; flex-shrink:0'></span>"
+                    f"<span style='font-size:11px; color:#64748b; font-weight:500'>{lbl}</span>"
+                    f"</div>"
+                    f"<div style='font-size:12px; color:#94a3b8; margin-top:2px; padding-left:14px'>{date_str}</div>"
+                    f"</div>", unsafe_allow_html=True,
+                )
 
 st.divider()
 

@@ -128,6 +128,13 @@ def build():
         index=df.index, name="nyfed_approx"
     )
 
+    # Scaler parameters (mean + std per feature) — used for what-if tool and factor attribution
+    scaler_params = {feat: {"mean": float(scaler.mean_[i]), "scale": float(scaler.scale_[i])}
+                     for i, feat in enumerate(FEATURES)}
+
+    # Data freshness: last observation date per raw FRED series
+    data_freshness = {name: s.dropna().index[-1].strftime("%b %Y") for name, s in data.items()}
+
     cache = dict(
         prob_series=prob_series,
         oos_series=oos_series,
@@ -146,6 +153,8 @@ def build():
         analogs=analogs,
         nyfed_series=nyfed_series,
         prev_prob=prev_prob,
+        scaler_params=scaler_params,
+        data_freshness=data_freshness,
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
