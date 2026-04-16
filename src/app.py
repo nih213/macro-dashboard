@@ -897,14 +897,14 @@ if submitted:
         st.warning("Please enter a valid email address.")
     else:
         token = st.secrets.get("GITHUB_TOKEN", "")
-        repo  = st.secrets.get("GITHUB_REPO", "")
+        repo  = st.secrets.get("SUBSCRIBER_REPO", "")
         if not token or not repo:
             st.info("Alert subscriptions are not enabled on this deployment.")
         else:
             try:
                 result = subscribe_email(email_clean, token, repo)
                 if result == "success":
-                    st.success("Subscribed. You'll receive an email when the probability crosses the danger zone.")
+                    st.success("Subscribed. You'll receive an email when the recession probability crosses the alert threshold.")
                 elif result == "already_subscribed":
                     st.info("That address is already subscribed.")
                 else:
