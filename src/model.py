@@ -32,6 +32,10 @@ def build_dataset(data: dict) -> pd.DataFrame:
     df["permits_chg"]       = df["permits"].pct_change(12) * 100         # 12m % change: falling = housing slowdown
     df["sp500_chg"]         = df["sp500"].pct_change(12) * 100           # 12m % change: used in stress_breadth only (DJIA/SP500 not available pre-2017 on FRED)
     df["payrolls_chg"]      = df["payrolls"].pct_change(12) * 100        # 12m % change: falling = labor stress
+    # --- CEI COMPONENTS (Conference Board Coincident Economic Index) ---
+    # These four series are the NBER's primary recession dating inputs
+    df["real_pi_chg"]       = df["real_pi"].pct_change(12) * 100         # 12m % change: personal income ex-transfers
+    df["mfg_trade_chg"]     = df["mfg_trade"].pct_change(12) * 100       # 12m % change: mfg & trade sales
     df["sentiment_chg"]     = df["sentiment"].diff(12)                   # 12m change: falling = demand weakness
     # --- MONETARY POLICY FEATURES (professor improvement) ---
     # Federal Funds Rate change: captures active tightening cycles (Bernanke & Blinder 1992)
@@ -89,7 +93,7 @@ def build_dataset(data: dict) -> pd.DataFrame:
     # This is what makes the model a 3-month-ahead forecast.
     df["target"] = df["recession"].shift(-3)
 
-    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "sentiment", "fedfunds", "cpi", "recession"])
+    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "recession"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.
@@ -105,7 +109,8 @@ def build_dataset(data: dict) -> pd.DataFrame:
 # --- TRAIN ---
 FEATURES = [
     "yield_spread", "credit_spread", "indpro_chg", "commodity_chg", "commodity_ma_ratio",
-    "permits_chg", "payrolls_chg", "sentiment_chg", "fedfunds_chg", "real_fedfunds",
+    "permits_chg", "payrolls_chg", "real_pi_chg", "mfg_trade_chg",
+    "sentiment_chg", "fedfunds_chg", "real_fedfunds",
     "financial_stress", "real_activity", "yield_momentum", "stress_breadth",
 ]
 

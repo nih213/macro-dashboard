@@ -162,6 +162,8 @@ FEATURE_LABELS = {
     "commodity_ma_ratio":"Commodity vs. 12m Avg",
     "permits_chg":       "Building Permits Δ",
     "payrolls_chg":      "Nonfarm Payrolls Δ",
+    "real_pi_chg":       "Personal Income (ex-transfers) Δ",
+    "mfg_trade_chg":     "Mfg & Trade Sales Δ",
     "sentiment_chg":     "Consumer Sentiment Δ",
     "fedfunds_chg":      "Fed Funds Rate Δ",
     "real_fedfunds":     "Real Fed Funds Rate",
@@ -180,6 +182,8 @@ SIGNAL_THRESHOLDS = {
     "commodity_ma_ratio": (1,           "At 12-month trend"),
     "permits_chg":        (0,           "Zero growth"),
     "payrolls_chg":       (0,           "Zero growth"),
+    "real_pi_chg":        (0,           "Zero growth"),
+    "mfg_trade_chg":      (0,           "Zero growth"),
     "sentiment_chg":      (0,           "No change"),
     "fedfunds_chg":       (0,           "No change"),
     "real_fedfunds":      (2,           "Restrictive threshold (~2%)"),
@@ -833,6 +837,15 @@ signal_card(cols3[2], "stress_breadth", "Stress Breadth",          f"{latest['st
 signal_card(cols3[3], "financial_stress","Financial Stress Index",  f"{latest['financial_stress']:+.2f} pp",
             stress=latest["financial_stress"] > 0, importance=imp.get("financial_stress", 0),
             note="Tight" if latest["financial_stress"] > 0 else "Loose")
+
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+cols4 = st.columns(4)
+signal_card(cols4[0], "real_pi_chg",    "Personal Income (ex-transfers)", f"{latest['real_pi_chg']:+.1f}% YoY",
+            stress=latest["real_pi_chg"] < 0, importance=imp.get("real_pi_chg", 0),
+            note="CEI component")
+signal_card(cols4[1], "mfg_trade_chg",  "Mfg & Trade Sales",   f"{latest['mfg_trade_chg']:+.1f}% YoY",
+            stress=latest["mfg_trade_chg"] < 0, importance=imp.get("mfg_trade_chg", 0),
+            note="CEI component")
 
 st.divider()
 

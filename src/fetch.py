@@ -32,6 +32,8 @@ SERIES = {
     "permits":     "PERMIT",          # Building permits (housing leading indicator) — starts 1960
     "sp500":       "DJIA",            # Dow Jones Industrial Average (replaces NASDAQ/SP500) — starts 1928
     "payrolls":    "PAYEMS",          # Total nonfarm payrolls (replaces initial claims) — starts 1939
+    "real_pi":     "W875RX1",         # Real personal income excl. transfer receipts (CEI component) — starts 1959
+    "mfg_trade":   "CMRMTSPL",        # Real mfg & trade industries sales (CEI component) — starts 1967
     "sentiment":   "UMCSENT",         # University of Michigan consumer sentiment — starts 1952
     "fedfunds":    "FEDFUNDS",        # Federal Funds Rate — monetary policy stance — starts 1954
     "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR — starts 1947
