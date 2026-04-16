@@ -90,9 +90,14 @@ def build_dataset(data: dict) -> pd.DataFrame:
     df["target"] = df["recession"].shift(-3)
 
     df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "sentiment", "fedfunds", "cpi", "recession"])
-    # Drop rows where features are NaN (start of series, rolling windows not filled yet).
+    # Forward-fill feature columns to handle lagged FRED releases:
+    # if a series hasn't published yet for the latest month(s), carry forward
+    # the most recent available reading rather than dropping the whole row.
+    feature_cols = [c for c in df.columns if c != "target"]
+    df[feature_cols] = df[feature_cols].ffill()
+    # Drop rows where features are still NaN (start of series, rolling windows not filled yet).
     # Keep rows where only target is NaN — those are the most recent months we predict on.
-    df = df.dropna(subset=[c for c in df.columns if c != "target"])
+    df = df.dropna(subset=feature_cols)
     return df
 
 
