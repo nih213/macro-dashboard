@@ -26,7 +26,7 @@ CACHE_PATH   = os.path.join(PROJECT_ROOT, "data", "cache.pkl")
 
 def fetch_subscribers(repo: str, token: str) -> list[str]:
     """Fetch subscriber emails from data/subscribers.txt in the private GitHub repo."""
-    url     = f"https://api.github.com/repos/{repo}/contents/data/subscribers.txt"
+    url     = f"https://api.github.com/repos/{repo}/contents/subscribers.txt"
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     r = requests.get(url, headers=headers, timeout=10)
     if r.status_code == 200:

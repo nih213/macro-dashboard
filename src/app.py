@@ -125,7 +125,7 @@ def subscribe_email(email: str, token: str, repo: str) -> str:
     """Append email to data/subscribers.txt in the repo via GitHub API.
     Returns: 'success' | 'already_subscribed' | 'error'
     """
-    url     = f"https://api.github.com/repos/{repo}/contents/data/subscribers.txt"
+    url     = f"https://api.github.com/repos/{repo}/contents/subscribers.txt"
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
 
     r = requests.get(url, headers=headers, timeout=10)
