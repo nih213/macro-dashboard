@@ -42,11 +42,21 @@ SERIES = {
 # --- FETCH ---
 def fetch_all() -> dict:
     """Pull each series from FRED and return as a dict of named Series."""
+    import time
     result = {}
     for name, series_id in SERIES.items():
         print(f"Fetching {name} ({series_id})...")
-        s = fred.get_series(series_id, observation_start=START_DATE)
-        result[name] = s.rename(name)
+        for attempt in range(1, 5):
+            try:
+                s = fred.get_series(series_id, observation_start=START_DATE)
+                result[name] = s.rename(name)
+                break
+            except Exception as e:
+                if attempt == 4:
+                    raise
+                wait = 15 * attempt
+                print(f"  FRED error ({e}), retrying in {wait}s (attempt {attempt}/3)...")
+                time.sleep(wait)
     print("Done.")
     return result
 
