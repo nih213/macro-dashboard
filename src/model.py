@@ -36,6 +36,11 @@ def build_dataset(data: dict) -> pd.DataFrame:
     # These four series are the NBER's primary recession dating inputs
     df["real_pi_chg"]       = df["real_pi"].pct_change(12) * 100         # 12m % change: personal income ex-transfers
     df["mfg_trade_chg"]     = df["mfg_trade"].pct_change(12) * 100       # 12m % change: mfg & trade sales
+    # --- ALCOHOL PCE (lipstick effect) ---
+    # Real PCE on alcoholic beverages. The "lipstick effect" theory: households substitute
+    # cheap pleasures (drinks at home) for expensive ones during downturns.
+    # If real, rising alcohol spending is a mild recession signal.
+    df["alcohol_pce_chg"]   = df["alcohol_pce"].pct_change(12) * 100     # 12m % change
     df["sentiment_chg"]     = df["sentiment"].diff(12)                   # 12m change: falling = demand weakness
     # --- MONETARY POLICY FEATURES (professor improvement) ---
     # Federal Funds Rate change: captures active tightening cycles (Bernanke & Blinder 1992)
@@ -93,7 +98,7 @@ def build_dataset(data: dict) -> pd.DataFrame:
     # This is what makes the model a 3-month-ahead forecast.
     df["target"] = df["recession"].shift(-3)
 
-    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "recession"])
+    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "alcohol_pce", "recession"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.
@@ -112,6 +117,7 @@ FEATURES = [
     "permits_chg", "payrolls_chg", "real_pi_chg", "mfg_trade_chg",
     "sentiment_chg", "fedfunds_chg", "real_fedfunds",
     "financial_stress", "real_activity", "yield_momentum", "stress_breadth",
+    "alcohol_pce_chg",
 ]
 
 def train(df: pd.DataFrame):
