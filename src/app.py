@@ -34,7 +34,7 @@ _CACHE_PATH   = os.path.join(_PROJECT_ROOT, "data", "cache.pkl")
 
 
 @st.cache_data(show_spinner="Loading dashboard data…")
-def load():
+def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh load
     if os.path.exists(_CACHE_PATH):
         with open(_CACHE_PATH, "rb") as f:
             c = pickle.load(f)
@@ -253,7 +253,8 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
             signal_dialog(feature_key)
 
 
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness = load()
+_mtime = os.path.getmtime(_CACHE_PATH) if os.path.exists(_CACHE_PATH) else 0
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness = load(_mtime)
 
 current_prob  = prob_series.iloc[-1]
 latest_date   = prob_series.index[-1]
