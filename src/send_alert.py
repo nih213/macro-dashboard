@@ -24,7 +24,7 @@ def send():
     smtp_user  = os.environ.get("SMTP_USER", "")
     smtp_pass  = os.environ.get("SMTP_PASSWORD", "")
     recipients = [e.strip() for e in os.environ.get("ALERT_EMAILS", "").split(",") if e.strip()]
-    threshold  = float(os.environ.get("ALERT_THRESHOLD", "25"))
+    threshold  = float(os.environ.get("ALERT_THRESHOLD") or "25")
 
     # Merge subscribers file + env var override
     subs_path = os.path.join(PROJECT_ROOT, "data", "subscribers.txt")
