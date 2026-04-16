@@ -587,7 +587,7 @@ with st.expander("What-If Scenario Analysis", expanded=False):
         "would change, holding all other signals at their current readings."
     )
     if scaler_params:
-        top5 = sorted(FEATURES, key=lambda f: abs(coefs[f]), reverse=True)[:5]
+        top5 = sorted(FEATURES, key=lambda f: abs(coefs.get(f, 0)), reverse=True)[:5]
         sl_cols = st.columns(5)
         overrides = {}
         for i, feat in enumerate(top5):
@@ -606,7 +606,7 @@ with st.expander("What-If Scenario Analysis", expanded=False):
         for feat in FEATURES:
             val = overrides.get(feat, float(latest[feat]))
             z   = (val - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
-            log_odds += coefs[feat] * z
+            log_odds += coefs.get(feat, 0) * z
         wi_prob  = 1 / (1 + np.exp(-log_odds)) * 100
         wi_color = "#22c55e" if wi_prob < 20 else "#eab308" if wi_prob < 50 else "#ef4444"
         delta    = wi_prob - current_prob
@@ -747,7 +747,7 @@ if scaler_params:
         for feat in feats:
             if feat in recent.columns and feat in scaler_params:
                 z = (recent[feat] - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
-                contrib += z * coefs[feat]
+                contrib += z * coefs.get(feat, 0)
         attr_fig.add_trace(go.Bar(
             x=recent.index, y=contrib.values,
             name=group_name, marker_color=GROUP_COLORS[group_name],
