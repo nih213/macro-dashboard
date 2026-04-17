@@ -458,8 +458,13 @@ if scaler_params:
     def _scenario_prob(overrides: dict) -> float:
         log_odds = intercept
         for feat in FEATURES:
-            val = overrides.get(feat, float(latest[feat]))
-            z   = (val - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
+            if feat in overrides:
+                val = overrides[feat]
+            elif feat in latest.index:
+                val = float(latest[feat])
+            else:
+                continue   # feature not in old cache — skip (contributes 0 to log-odds delta)
+            z = (val - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
             log_odds += coefs.get(feat, 0) * z
         return 1 / (1 + np.exp(-log_odds)) * 100
 
