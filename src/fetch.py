@@ -64,6 +64,41 @@ def fetch_all() -> dict:
     return result
 
 # %%
+# --- STATE UNEMPLOYMENT ---
+# Seasonally-adjusted monthly unemployment rate by state, FRED series {state}UR.
+# Available for all 50 states; most series start January 1976.
+STATE_UR_SERIES = {
+    "AL": "ALUR", "AK": "AKUR", "AZ": "AZUR", "AR": "ARUR", "CA": "CAUR",
+    "CO": "COUR", "CT": "CTUR", "DE": "DEUR", "FL": "FLUR", "GA": "GAUR",
+    "HI": "HIUR", "ID": "IDUR", "IL": "ILUR", "IN": "INUR", "IA": "IAUR",
+    "KS": "KSUR", "KY": "KYUR", "LA": "LAUR", "ME": "MEUR", "MD": "MDUR",
+    "MA": "MAUR", "MI": "MIUR", "MN": "MNUR", "MS": "MSUR", "MO": "MOUR",
+    "MT": "MTUR", "NE": "NEUR", "NV": "NVUR", "NH": "NHUR", "NJ": "NJUR",
+    "NM": "NMUR", "NY": "NYUR", "NC": "NCUR", "ND": "NDUR", "OH": "OHUR",
+    "OK": "OKUR", "OR": "ORUR", "PA": "PAUR", "RI": "RIUR", "SC": "SCUR",
+    "SD": "SDUR", "TN": "TNUR", "TX": "TXUR", "UT": "UTUR", "VT": "VTUR",
+    "VA": "VAUR", "WA": "WAUR", "WV": "WVUR", "WI": "WIUR", "WY": "WYUR",
+}
+
+def fetch_state_unemployment() -> dict:
+    """Pull monthly unemployment rate for all 50 states from FRED. Returns {state_abbr: Series}."""
+    import time
+    result = {}
+    for state, series_id in STATE_UR_SERIES.items():
+        for attempt in range(1, 4):
+            try:
+                s = fred.get_series(series_id, observation_start="1970-01-01")
+                result[state] = s.rename(state)
+                break
+            except Exception as e:
+                if attempt == 3:
+                    print(f"  Skipping {state} ({series_id}): {e}")
+                else:
+                    time.sleep(10 * attempt)
+    print(f"  State UR fetched: {len(result)}/50 states.")
+    return result
+
+# %%
 # Run this cell to test — you should see 5 series with recent dates and values
 # The if __name__ == "__main__" guard means this block only runs when you
 # execute fetch.py directly. It is skipped when another file imports fetch.py.

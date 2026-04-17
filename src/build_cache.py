@@ -14,11 +14,68 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import precision_score, recall_score
 
 sys.path.insert(0, os.path.dirname(__file__))
-from fetch import fetch_all
+from fetch import fetch_all, fetch_state_unemployment
 from model import build_dataset, train, FEATURES, feature_importances, walk_forward_predict
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 CACHE_PATH   = os.path.join(PROJECT_ROOT, "data", "cache.pkl")
+
+
+def compute_state_data(data, df, coefs, intercept, scaler_params):
+    """
+    Per-state recession probabilities.
+
+    Method: take the national model's log-odds, remove the national payrolls_chg
+    contribution, and substitute a state-specific equivalent derived from the
+    state's 12-month unemployment rate change via a historically-fitted Okun
+    relationship (payrolls_chg ~ f(unrate_chg), estimated from national data).
+
+    Returns {"probs": {state: float}, "ur_latest": {state: {"ur": float, "chg": float}}}
+    """
+    from sklearn.linear_model import LinearRegression
+
+    # Fit national UR-change → payrolls_chg conversion (Okun's law, data-driven)
+    unrate_m = data["unrate"].resample("ME").last()
+    ur_chg   = unrate_m.diff(12).reindex(df.index)
+    aligned  = pd.DataFrame({"ur": ur_chg, "pay": df["payrolls_chg"]}).dropna()
+    if len(aligned) >= 10:
+        lr = LinearRegression().fit(aligned[["ur"]], aligned["pay"])
+        ur_to_pay_coef = float(lr.coef_[0])
+        ur_to_pay_int  = float(lr.intercept_)
+    else:
+        ur_to_pay_coef, ur_to_pay_int = -2.0, 1.5
+
+    # Base log-odds: all national features except payrolls_chg
+    pay_coef  = coefs.get("payrolls_chg", 0)
+    pay_mean  = scaler_params["payrolls_chg"]["mean"]
+    pay_scale = scaler_params["payrolls_chg"]["scale"]
+
+    base_lo = intercept
+    for feat in FEATURES:
+        if feat == "payrolls_chg":
+            continue
+        z = (float(df[feat].iloc[-1]) - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
+        base_lo += coefs.get(feat, 0) * z
+
+    print("Fetching state unemployment rates (50 series)...")
+    state_ur = fetch_state_unemployment()
+
+    probs     = {}
+    ur_latest = {}
+    for state, s in state_ur.items():
+        m   = s.resample("ME").last().dropna()
+        chg = m.diff(12).dropna()
+        if len(chg) == 0:
+            continue
+        state_ur_chg = float(chg.iloc[-1])
+        pay_equiv    = ur_to_pay_coef * state_ur_chg + ur_to_pay_int
+        state_z      = (pay_equiv - pay_mean) / pay_scale
+        lo           = base_lo + pay_coef * state_z
+        probs[state]     = round(float(1 / (1 + np.exp(-lo)) * 100), 1)
+        ur_latest[state] = {"ur": round(float(m.iloc[-1]), 1), "chg": round(state_ur_chg, 2)}
+
+    print(f"  State probabilities computed for {len(probs)} states.")
+    return {"probs": probs, "ur_latest": ur_latest}
 
 
 def compute_analogs(df, scaler, prob_series, recession, n=3):
@@ -193,6 +250,9 @@ def build():
     scaler_params = {feat: {"mean": float(scaler.mean_[i]), "scale": float(scaler.scale_[i])}
                      for i, feat in enumerate(FEATURES)}
 
+    print("Computing state-level recession probabilities...")
+    state_data = compute_state_data(data, df, coefs, intercept, scaler_params)
+
     # Data freshness: last observation date per raw FRED series
     data_freshness = {name: s.dropna().index[-1].strftime("%b %Y") for name, s in data.items()}
 
@@ -220,6 +280,7 @@ def build():
         ci_upper=ci_upper,
         last_built=pd.Timestamp.now().strftime("%Y-%m-%d"),
         outcome_summary=outcome_summary,
+        state_data=state_data,
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)

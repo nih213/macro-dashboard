@@ -50,7 +50,7 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
                 c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"),
                 c.get("scaler_params"), c.get("data_freshness"),
                 c.get("ci_lower"), c.get("ci_upper"), c.get("last_built"),
-                c.get("outcome_summary"))
+                c.get("outcome_summary"), c.get("state_data"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -102,7 +102,7 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
 
     return (prob_series, oos_series, recession, latest, credit_mean, importances,
             perf_df, targets, danger_threshold, coefs, intercept, df,
-            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None, None)
+            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None, None, None)
 
 
 def recession_periods(rec_series):
@@ -268,7 +268,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
 
 
 _mtime = os.path.getmtime(_CACHE_PATH) if os.path.exists(_CACHE_PATH) else 0
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built, outcome_summary = load(_mtime)
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built, outcome_summary, state_data = load(_mtime)
 
 current_prob  = prob_series.iloc[-1]
 latest_date   = prob_series.index[-1]
@@ -686,6 +686,105 @@ if outcome_summary:
         tbl += "</tr>"
     tbl += "</table>"
     st.markdown(tbl, unsafe_allow_html=True)
+
+# ── STATE MAP ────────────────────────────────────────────────────────────────
+_STATE_NAMES = {
+    "AL": "Alabama",       "AK": "Alaska",        "AZ": "Arizona",       "AR": "Arkansas",
+    "CA": "California",    "CO": "Colorado",      "CT": "Connecticut",   "DE": "Delaware",
+    "FL": "Florida",       "GA": "Georgia",       "HI": "Hawaii",        "ID": "Idaho",
+    "IL": "Illinois",      "IN": "Indiana",       "IA": "Iowa",          "KS": "Kansas",
+    "KY": "Kentucky",      "LA": "Louisiana",     "ME": "Maine",         "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan",      "MN": "Minnesota",     "MS": "Mississippi",
+    "MO": "Missouri",      "MT": "Montana",       "NE": "Nebraska",      "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey",    "NM": "New Mexico",    "NY": "New York",
+    "NC": "North Carolina","ND": "North Dakota",  "OH": "Ohio",          "OK": "Oklahoma",
+    "OR": "Oregon",        "PA": "Pennsylvania",  "RI": "Rhode Island",  "SC": "South Carolina",
+    "SD": "South Dakota",  "TN": "Tennessee",     "TX": "Texas",         "UT": "Utah",
+    "VT": "Vermont",       "VA": "Virginia",      "WA": "Washington",    "WV": "West Virginia",
+    "WI": "Wisconsin",     "WY": "Wyoming",
+}
+
+_state_probs   = (state_data or {}).get("probs", {})
+_state_ur_data = (state_data or {}).get("ur_latest", {})
+
+if _state_probs:
+    st.divider()
+    st.subheader("State-Level Recession Signals")
+    st.caption(
+        "Each state's recession probability using its own unemployment trend as the "
+        "labor market input, holding all national indicators (yield curve, credit spreads, "
+        "monetary policy, etc.) fixed at current readings."
+    )
+
+    _states = sorted(_state_probs.keys())
+    _probs  = [_state_probs[s] for s in _states]
+    _hover  = []
+    for s in _states:
+        ur = _state_ur_data.get(s, {})
+        trend = ("▲ rising" if ur.get("chg", 0) > 0.1 else
+                 "▼ falling" if ur.get("chg", 0) < -0.1 else "→ stable")
+        _hover.append(
+            f"<b>{_STATE_NAMES.get(s, s)}</b><br>"
+            f"Recession probability: <b>{_state_probs[s]:.1f}%</b><br>"
+            f"Unemployment rate: {ur.get('ur', '?'):.1f}%<br>"
+            f"12-month change: {ur.get('chg', 0):+.2f} pp ({trend})"
+        )
+
+    _map_fig = go.Figure(go.Choropleth(
+        locations=_states,
+        z=_probs,
+        locationmode="USA-states",
+        colorscale=[
+            [0.00, "#16a34a"],
+            [0.10, "#4ade80"],
+            [0.25, "#fde047"],
+            [0.50, "#f97316"],
+            [1.00, "#dc2626"],
+        ],
+        zmin=0, zmax=60,
+        colorbar=dict(title="Recession<br>prob (%)", thickness=14, len=0.65, ticksuffix="%"),
+        hoverinfo="text",
+        text=_hover,
+        marker_line_color="white",
+        marker_line_width=0.5,
+    ))
+    _map_fig.update_layout(
+        geo=dict(scope="usa", projection_type="albers usa",
+                 showlakes=False, bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=430,
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(_map_fig, use_container_width=True)
+
+    # Top 5 most stressed states
+    _sorted_states = sorted(_state_probs.items(), key=lambda x: x[1], reverse=True)
+    _top5 = _sorted_states[:5]
+    _bot5 = _sorted_states[-5:]
+    _col_hi, _col_lo = st.columns(2)
+    with _col_hi:
+        st.markdown("**Most stressed states**")
+        for abbr, p in _top5:
+            chg = _state_ur_data.get(abbr, {}).get("chg", 0)
+            c = "#ef4444" if p >= 40 else "#f97316" if p >= 20 else "#eab308"
+            st.markdown(
+                f"<div style='display:flex; justify-content:space-between; padding:4px 0; "
+                f"border-bottom:1px solid #f1f5f9'>"
+                f"<span style='color:#475569'>{_STATE_NAMES.get(abbr, abbr)}</span>"
+                f"<span style='font-weight:700; color:{c}'>{p:.1f}% "
+                f"<span style='font-size:11px; color:#94a3b8'>({chg:+.2f} pp UR)</span></span>"
+                f"</div>", unsafe_allow_html=True)
+    with _col_lo:
+        st.markdown("**Least stressed states**")
+        for abbr, p in reversed(_bot5):
+            chg = _state_ur_data.get(abbr, {}).get("chg", 0)
+            st.markdown(
+                f"<div style='display:flex; justify-content:space-between; padding:4px 0; "
+                f"border-bottom:1px solid #f1f5f9'>"
+                f"<span style='color:#475569'>{_STATE_NAMES.get(abbr, abbr)}</span>"
+                f"<span style='font-weight:700; color:#22c55e'>{p:.1f}% "
+                f"<span style='font-size:11px; color:#94a3b8'>({chg:+.2f} pp UR)</span></span>"
+                f"</div>", unsafe_allow_html=True)
 
 # ── INTRODUCTION & MODEL FORMULA ─────────────────────────────────────────────
 st.markdown(
