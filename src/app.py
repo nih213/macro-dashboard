@@ -655,13 +655,17 @@ _EVENTS = {
 }
 for _ev_date, _ev_label in _EVENTS.items():
     if prob_series.index[0] <= _ev_date <= prob_series.index[-1]:
-        fig.add_vline(
-            x=_ev_date.isoformat(), line_color="rgba(100,100,100,0.25)",
-            line_dash="dot", line_width=1,
-            annotation_text=_ev_label,
-            annotation_position="top right",
-            annotation_font_size=9,
-            annotation_font_color="rgba(100,100,100,0.65)",
+        fig.add_shape(
+            type="line",
+            x0=_ev_date.isoformat(), x1=_ev_date.isoformat(),
+            y0=0, y1=1, yref="paper",
+            line=dict(color="rgba(100,100,100,0.25)", dash="dot", width=1),
+        )
+        fig.add_annotation(
+            x=_ev_date.isoformat(), y=0.98, yref="paper",
+            text=_ev_label, showarrow=False,
+            font=dict(size=9, color="rgba(100,100,100,0.65)"),
+            xanchor="left", yanchor="top", textangle=-90,
         )
 
 fig.update_layout(
