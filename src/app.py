@@ -656,7 +656,7 @@ _EVENTS = {
 for _ev_date, _ev_label in _EVENTS.items():
     if prob_series.index[0] <= _ev_date <= prob_series.index[-1]:
         fig.add_vline(
-            x=_ev_date, line_color="rgba(100,100,100,0.25)",
+            x=_ev_date.isoformat(), line_color="rgba(100,100,100,0.25)",
             line_dash="dot", line_width=1,
             annotation_text=_ev_label,
             annotation_position="top right",
