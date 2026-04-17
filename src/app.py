@@ -433,10 +433,18 @@ if outcome_summary:
     st.divider()
     st.subheader("What does this probability mean in practice?")
 
-    OUTCOME_BUCKETS = [(0, 10, "Low (0–10%)"), (10, 20, "Moderate (10–20%)"),
-                       (20, 40, "Elevated (20–40%)"), (40, 100, "High (40%+)")]
-    BUCKET_COLORS   = {"Low (0–10%)": "#22c55e", "Moderate (10–20%)": "#eab308",
-                       "Elevated (20–40%)": "#f97316", "High (40%+)": "#ef4444"}
+    OUTCOME_BUCKETS = [(0,  3,  "Very Low (0–3%)"),
+                       (3,  7,  "Low (3–7%)"),
+                       (7,  10, "Guarded (7–10%)"),
+                       (10, 20, "Moderate (10–20%)"),
+                       (20, 40, "Elevated (20–40%)"),
+                       (40, 100,"High (40%+)")]
+    BUCKET_COLORS   = {"Very Low (0–3%)":    "#16a34a",
+                       "Low (3–7%)":         "#22c55e",
+                       "Guarded (7–10%)":    "#86efac",
+                       "Moderate (10–20%)":  "#eab308",
+                       "Elevated (20–40%)":  "#f97316",
+                       "High (40%+)":        "#ef4444"}
     current_bucket  = next((lbl for lo, hi, lbl in OUTCOME_BUCKETS if lo <= current_prob < hi),
                            "High (40%+)")
     cb           = outcome_summary.get(current_bucket, {})

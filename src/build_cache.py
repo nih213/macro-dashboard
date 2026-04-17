@@ -104,8 +104,12 @@ def build():
     # For each probability bucket, compute average forward outcomes across 3/6/12 months.
     # Uses DJIA (already fetched), payrolls (already fetched), and unemployment rate (new).
     print("Computing outcome calculator data...")
-    OUTCOME_BUCKETS = [(0, 10, "Low (0–10%)"), (10, 20, "Moderate (10–20%)"),
-                       (20, 40, "Elevated (20–40%)"), (40, 100, "High (40%+)")]
+    OUTCOME_BUCKETS = [(0,  3,  "Very Low (0–3%)"),
+                       (3,  7,  "Low (3–7%)"),
+                       (7,  10, "Guarded (7–10%)"),
+                       (10, 20, "Moderate (10–20%)"),
+                       (20, 40, "Elevated (20–40%)"),
+                       (40, 100,"High (40%+)")]
     djia_m   = data["sp500"].resample("ME").last()
     unrate_m = data["unrate"].resample("ME").last()
     pay_m    = data["payrolls"].resample("ME").last()
