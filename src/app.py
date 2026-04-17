@@ -356,10 +356,10 @@ with summary_col:
                     annotation_font_size=10,
                     annotation_font_color="rgba(249,115,22,0.8)")
     spark.update_layout(
-        height=130,
+        height=180,
         margin=dict(l=0, r=70, t=4, b=0),
         xaxis=dict(showgrid=False, tickformat="%b '%y", tickangle=-30, tickfont=dict(size=10)),
-        yaxis=dict(range=[0, max(30, current_prob * 2)], showgrid=False,
+        yaxis=dict(range=[0, max(40, float(recent.max()) * 1.3)], showgrid=False,
                    ticksuffix="%", tickfont=dict(size=10)),
         plot_bgcolor="white", paper_bgcolor="white",
         showlegend=False,
