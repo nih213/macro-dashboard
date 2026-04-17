@@ -94,7 +94,7 @@ def build_dataset(data: dict) -> pd.DataFrame:
     # This is what makes the model a 3-month-ahead forecast.
     df["target"] = df["recession"].shift(-3)
 
-    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "recession"])
+    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.

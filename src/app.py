@@ -43,7 +43,8 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
                 c["danger_threshold"], c["coefs"], c["intercept"], c["df_history"],
                 c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"),
                 c.get("scaler_params"), c.get("data_freshness"),
-                c.get("ci_lower"), c.get("ci_upper"), c.get("last_built"))
+                c.get("ci_lower"), c.get("ci_upper"), c.get("last_built"),
+                c.get("outcome_summary"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -95,7 +96,7 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
 
     return (prob_series, oos_series, recession, latest, credit_mean, importances,
             perf_df, targets, danger_threshold, coefs, intercept, df,
-            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None)
+            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None, None)
 
 
 def recession_periods(rec_series):
@@ -261,7 +262,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
 
 
 _mtime = os.path.getmtime(_CACHE_PATH) if os.path.exists(_CACHE_PATH) else 0
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built = load(_mtime)
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built, outcome_summary = load(_mtime)
 
 current_prob  = prob_series.iloc[-1]
 latest_date   = prob_series.index[-1]
@@ -426,6 +427,94 @@ with summary_col:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+
+# ── WHAT THIS MEANS FOR YOU ───────────────────────────────────────────────────
+if outcome_summary:
+    st.divider()
+    st.subheader("What does this probability mean in practice?")
+
+    OUTCOME_BUCKETS = [(0, 10, "Low (0–10%)"), (10, 20, "Moderate (10–20%)"),
+                       (20, 40, "Elevated (20–40%)"), (40, 100, "High (40%+)")]
+    BUCKET_COLORS   = {"Low (0–10%)": "#22c55e", "Moderate (10–20%)": "#eab308",
+                       "Elevated (20–40%)": "#f97316", "High (40%+)": "#ef4444"}
+    current_bucket  = next((lbl for lo, hi, lbl in OUTCOME_BUCKETS if lo <= current_prob < hi),
+                           "High (40%+)")
+    cb           = outcome_summary.get(current_bucket, {})
+    bucket_color = BUCKET_COLORS[current_bucket]
+
+    st.markdown(
+        f"<div style='padding:12px 16px; border-radius:8px; border-left:4px solid {bucket_color}; "
+        f"background:#f8fafc; margin-bottom:16px'>"
+        f"<span style='font-size:13px; color:#64748b'>Current environment: </span>"
+        f"<strong style='color:{bucket_color}'>{current_bucket}</strong>"
+        f"<span style='font-size:12px; color:#94a3b8'> &nbsp;·&nbsp; "
+        f"Based on {cb.get('n', 0)} similar historical months</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.caption("Average outcomes in similar past environments (DJIA returns, unemployment change, monthly payroll gains):")
+
+    h_cols = st.columns(3)
+    for col, h, hlabel in zip(h_cols, [3, 6, 12], ["3 months out", "6 months out", "12 months out"]):
+        sv = cb.get(f"stocks_{h}m",   {}).get("mean")
+        uv = cb.get(f"unrate_{h}m",   {}).get("mean")
+        pv = cb.get(f"payrolls_{h}m", {}).get("mean")
+        sc = "#22c55e" if sv is not None and sv > 0 else "#ef4444" if sv is not None else "#94a3b8"
+        uc = "#ef4444" if uv is not None and uv > 0.05 else "#22c55e" if uv is not None else "#94a3b8"
+        pc = "#22c55e" if pv is not None and pv > 0 else "#ef4444" if pv is not None else "#94a3b8"
+        with col:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px'>{hlabel}</div>"
+                f"<div style='margin-bottom:10px'>"
+                f"  <div style='font-size:11px; color:#64748b'>Stock market (DJIA)</div>"
+                f"  <div style='font-size:20px; font-weight:700; color:{sc}'>{f'{sv:+.1f}%' if sv is not None else '—'}</div>"
+                f"</div>"
+                f"<div style='margin-bottom:10px'>"
+                f"  <div style='font-size:11px; color:#64748b'>Unemployment change</div>"
+                f"  <div style='font-size:20px; font-weight:700; color:{uc}'>{f'{uv:+.2f} pp' if uv is not None else '—'}</div>"
+                f"</div>"
+                f"<div>"
+                f"  <div style='font-size:11px; color:#64748b'>Monthly job gains</div>"
+                f"  <div style='font-size:20px; font-weight:700; color:{pc}'>{f'{pv:+.0f}k/mo' if pv is not None else '—'}</div>"
+                f"</div></div>",
+                unsafe_allow_html=True,
+            )
+
+    # Cross-bucket comparison at 12-month horizon
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    st.caption("12-month outcomes across all risk levels (historical averages):")
+
+    bucket_names = [lbl for _, _, lbl in OUTCOME_BUCKETS]
+    metrics_cfg  = [
+        ("Stock market",      "stocks_12m",   True,  "%"),
+        ("Unemployment",      "unrate_12m",   False, " pp"),
+        ("Monthly job gains", "payrolls_12m", True,  "k/mo"),
+    ]
+    th = "padding:8px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8; border-bottom:2px solid #e2e8f0"
+    td = "padding:8px 12px; font-size:14px; font-weight:600; text-align:center; border-bottom:1px solid #f1f5f9"
+    tbl  = "<table style='width:100%; border-collapse:collapse'><tr>"
+    tbl += f"<th style='{th}; text-align:left'>Metric</th>"
+    for bname in bucket_names:
+        bc     = BUCKET_COLORS[bname]
+        is_cur = bname == current_bucket
+        bg     = "background:#f8fafc" if is_cur else ""
+        tbl   += f"<th style='{th}; text-align:center; {bg}'><span style='color:{bc}'>{bname.split(' ')[0]}</span></th>"
+    tbl += "</tr>"
+    for mlabel, mkey, pos_good, unit in metrics_cfg:
+        tbl += f"<tr><td style='{td}; text-align:left; color:#475569; font-weight:400'>{mlabel}</td>"
+        for bname in bucket_names:
+            val    = outcome_summary.get(bname, {}).get(mkey, {}).get("mean")
+            is_cur = bname == current_bucket
+            bg     = "background:#f8fafc" if is_cur else ""
+            if val is not None:
+                good  = val > 0 if pos_good else val < 0
+                color = "#22c55e" if good else "#ef4444"
+                tbl  += f"<td style='{td}; {bg}'><span style='color:{color}'>{val:+.1f}{unit}</span></td>"
+            else:
+                tbl += f"<td style='{td}; {bg}'>—</td>"
+        tbl += "</tr>"
+    tbl += "</table>"
+    st.markdown(tbl, unsafe_allow_html=True)
 
 # ── INTRODUCTION & MODEL FORMULA ─────────────────────────────────────────────
 st.markdown(

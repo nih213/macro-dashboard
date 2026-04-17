@@ -100,6 +100,41 @@ def build():
     ]
     danger_threshold = int(candidate_thresholds[np.argmax(f1s)])
 
+    # --- OUTCOME CALCULATOR ---
+    # For each probability bucket, compute average forward outcomes across 3/6/12 months.
+    # Uses DJIA (already fetched), payrolls (already fetched), and unemployment rate (new).
+    print("Computing outcome calculator data...")
+    OUTCOME_BUCKETS = [(0, 10, "Low (0–10%)"), (10, 20, "Moderate (10–20%)"),
+                       (20, 40, "Elevated (20–40%)"), (40, 100, "High (40%+)")]
+    djia_m   = data["sp500"].resample("ME").last()
+    unrate_m = data["unrate"].resample("ME").last()
+    pay_m    = data["payrolls"].resample("ME").last()
+
+    outcome_data = pd.DataFrame({"prob": prob_series}, index=df.index)
+    for h in [3, 6, 12]:
+        # Forward h-month return from each date
+        outcome_data[f"stocks_{h}m"]   = (djia_m.pct_change(h).shift(-h) * 100).reindex(df.index)
+        # Forward change in unemployment rate
+        outcome_data[f"unrate_{h}m"]   = unrate_m.diff(h).shift(-h).reindex(df.index)
+        # Average monthly payroll change (series in 000s of jobs)
+        outcome_data[f"payrolls_{h}m"] = (pay_m.diff(h) / h).shift(-h).reindex(df.index)
+
+    outcome_summary = {}
+    for lo, hi, label in OUTCOME_BUCKETS:
+        mask = (outcome_data["prob"] >= lo) & (outcome_data["prob"] < hi)
+        sub  = outcome_data[mask]
+        entry = {"n": int(mask.sum())}
+        for h in [3, 6, 12]:
+            for metric in ["stocks", "unrate", "payrolls"]:
+                col  = f"{metric}_{h}m"
+                vals = sub[col].dropna()
+                entry[col] = {
+                    "mean": round(float(vals.mean()), 1) if len(vals) > 0 else None,
+                    "p25":  round(float(vals.quantile(0.25)), 1) if len(vals) > 0 else None,
+                    "p75":  round(float(vals.quantile(0.75)), 1) if len(vals) > 0 else None,
+                }
+        outcome_summary[label] = entry
+
     recession    = data["recession"].resample("ME").last().dropna()
     latest       = df.iloc[-1]
     credit_mean  = df["credit_spread"].mean()
@@ -180,6 +215,7 @@ def build():
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         last_built=pd.Timestamp.now().strftime("%Y-%m-%d"),
+        outcome_summary=outcome_summary,
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)

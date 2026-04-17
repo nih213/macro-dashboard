@@ -37,6 +37,7 @@ SERIES = {
     "sentiment":   "UMCSENT",         # University of Michigan consumer sentiment — starts 1952
     "fedfunds":    "FEDFUNDS",        # Federal Funds Rate — monetary policy stance — starts 1954
     "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR and inflation feature — starts 1947
+    "unrate":      "UNRATE",          # Unemployment rate — for outcome calculator — starts 1948
     "recession":   "USREC",           # NBER recession indicator: 1 = recession, 0 = expansion
 }
 
