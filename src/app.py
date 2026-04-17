@@ -506,7 +506,11 @@ if outcome_summary:
         bc     = BUCKET_COLORS[bname]
         is_cur = bname == current_bucket
         bg     = "background:#f8fafc" if is_cur else ""
-        tbl   += f"<th style='{th}; text-align:center; {bg}'><span style='color:{bc}'>{bname.split(' ')[0]}</span></th>"
+        name_part, range_part = bname.split(" (") if " (" in bname else (bname, "")
+        range_str = f"({range_part}" if range_part else ""
+        tbl += (f"<th style='{th}; text-align:center; {bg}'>"
+                f"<span style='color:{bc}'>{name_part}</span>"
+                f"<br><span style='font-size:10px; color:#94a3b8'>{range_str}</span></th>")
     tbl += "</tr>"
     for mlabel, mkey, pos_good, unit in metrics_cfg:
         tbl += f"<tr><td style='{td}; text-align:left; color:#475569; font-weight:400'>{mlabel}</td>"
