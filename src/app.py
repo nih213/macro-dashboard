@@ -16,11 +16,17 @@ st.set_page_config(page_title="US Recession Probability", layout="wide")
 
 st.markdown("""
 <style>
-@media (max-width: 640px) {
-    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+@media (max-width: 768px) {
+    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-        min-width: min(100%, 260px) !important;
-        flex: 1 1 260px !important;
+        min-width: calc(50% - 8px) !important;
+        flex: 1 1 calc(50% - 8px) !important;
+    }
+}
+@media (max-width: 480px) {
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
     }
 }
 </style>
@@ -428,6 +434,18 @@ with summary_col:
                     unsafe_allow_html=True,
                 )
 
+# ── SHARE ─────────────────────────────────────────────────────────────────────
+share_text = (f"US recession probability: {current_prob:.1f}% by "
+              f"{forecast_date.strftime('%B %Y')} — recession-chance.com")
+share_col, _ = st.columns([3, 2])
+with share_col:
+    st.markdown(
+        "<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+        "letter-spacing:0.05em; margin-bottom:4px'>Share this reading</div>",
+        unsafe_allow_html=True,
+    )
+    st.code(share_text, language=None)
+
 # ── WHAT THIS MEANS FOR YOU ───────────────────────────────────────────────────
 if outcome_summary:
     st.divider()
@@ -591,6 +609,11 @@ st.caption("Red = raises recession probability · Blue = lowers recession probab
 st.divider()
 
 # ── HISTORICAL CHART ──────────────────────────────────────────────────────────
+st.subheader("Full Model History (1967 – Present)")
+st.caption(
+    "Recession probability since the model's start date. Grey shading = NBER recessions. "
+    "Key events annotated. Dotted line = out-of-sample predictions trained only on past data."
+)
 fig = go.Figure()
 add_recession_shading(fig, recession)
 
@@ -621,6 +644,25 @@ fig.add_hline(y=danger_threshold, line_dash="dash", line_color="rgba(249,115,22,
 fig.add_hline(y=50, line_dash="dash", line_color="rgba(220,50,50,0.5)",
               annotation_text="50%", annotation_position="right",
               annotation_font_color="rgba(220,50,50,0.7)")
+
+# Key event annotations
+_EVENTS = {
+    pd.Timestamp("1973-11-01"): "Oil Crisis",
+    pd.Timestamp("1980-01-01"): "Volcker",
+    pd.Timestamp("2001-03-01"): "Dot-com",
+    pd.Timestamp("2007-12-01"): "GFC",
+    pd.Timestamp("2020-02-01"): "COVID-19",
+}
+for _ev_date, _ev_label in _EVENTS.items():
+    if prob_series.index[0] <= _ev_date <= prob_series.index[-1]:
+        fig.add_vline(
+            x=_ev_date, line_color="rgba(100,100,100,0.25)",
+            line_dash="dot", line_width=1,
+            annotation_text=_ev_label,
+            annotation_position="top right",
+            annotation_font_size=9,
+            annotation_font_color="rgba(100,100,100,0.65)",
+        )
 
 fig.update_layout(
     height=420,
@@ -695,6 +737,34 @@ if nyfed_series is not None:
         "</div>",
         unsafe_allow_html=True,
     )
+
+# Recession-by-recession performance table
+with st.expander("Model accuracy at each recession", expanded=False):
+    st.caption("How much warning did the model give before each NBER recession?")
+    _rec_rows = []
+    for _rs, _re in recession_periods(recession):
+        if _rs < prob_series.index[0]:
+            continue
+        _lb = prob_series[
+            (prob_series.index >= _rs - pd.DateOffset(months=18)) &
+            (prob_series.index < _rs)
+        ]
+        if len(_lb) == 0:
+            continue
+        _peak     = _lb.max()
+        _peak_dt  = _lb.idxmax()
+        _above    = _lb[_lb >= danger_threshold]
+        _warn     = round((_rs - _above.index[0]).days / 30.5) if len(_above) > 0 else None
+        _duration = max(1, round((_re - _rs).days / 30.5))
+        _rec_rows.append({
+            "Recession":            f"{_rs.strftime('%b %Y')} – {_re.strftime('%b %Y')}",
+            "Duration":             f"{_duration}m",
+            "Peak prob before start": f"{_peak:.0f}%",
+            "Peak reached":         _peak_dt.strftime("%b %Y"),
+            f"Warning (>{danger_threshold}% threshold)": f"{_warn}m before" if _warn else "No signal",
+        })
+    if _rec_rows:
+        st.dataframe(pd.DataFrame(_rec_rows), use_container_width=True, hide_index=True)
 
 st.divider()
 
