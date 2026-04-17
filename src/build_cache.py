@@ -36,7 +36,7 @@ def compute_state_data(data, df, coefs, intercept, scaler_params):
 
     # Fit national UR-change → payrolls_chg conversion (Okun's law, data-driven)
     unrate_m = data["unrate"].resample("ME").last()
-    ur_chg   = unrate_m.diff(12).reindex(df.index)
+    ur_chg   = unrate_m.diff(3).reindex(df.index)   # 3m change to match annualized-3m payrolls
     aligned  = pd.DataFrame({"ur": ur_chg, "pay": df["payrolls_chg"]}).dropna()
     if len(aligned) >= 10:
         lr = LinearRegression().fit(aligned[["ur"]], aligned["pay"])
@@ -64,7 +64,7 @@ def compute_state_data(data, df, coefs, intercept, scaler_params):
     ur_latest = {}
     for state, s in state_ur.items():
         m   = s.resample("ME").last().dropna()
-        chg = m.diff(12).dropna()
+        chg = m.diff(3).dropna()   # 3m change, matching annualized-3m payrolls feature
         if len(chg) == 0:
             continue
         state_ur_chg = float(chg.iloc[-1])

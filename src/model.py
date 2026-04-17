@@ -31,7 +31,7 @@ def build_dataset(data: dict) -> pd.DataFrame:
     df["commodity_ma_ratio"] = df["commodity"] / df["commodity"].rolling(12).mean()  # ratio to 12m MA: <1 = below trend
     df["permits_chg"]       = df["permits"].pct_change(12) * 100         # 12m % change: falling = housing slowdown
     df["sp500_chg"]         = df["sp500"].pct_change(12) * 100           # 12m % change: used in stress_breadth only (DJIA/SP500 not available pre-2017 on FRED)
-    df["payrolls_chg"]      = df["payrolls"].pct_change(12) * 100        # 12m % change: falling = labor stress
+    df["payrolls_chg"]      = df["payrolls"].pct_change(3) * 400          # annualized 3m rate: captures recent hiring pace; negative = shedding jobs
     # --- CEI COMPONENTS (Conference Board Coincident Economic Index) ---
     # These four series are the NBER's primary recession dating inputs
     df["real_pi_chg"]       = df["real_pi"].pct_change(12) * 100         # 12m % change: personal income ex-transfers
@@ -45,8 +45,9 @@ def build_dataset(data: dict) -> pd.DataFrame:
     # are not actually tight (e.g. 1970s). Volcker's 1980 hike was devastating precisely
     # because real rates turned sharply positive.
     cpi_yoy                 = df["cpi"].pct_change(12) * 100
-    df["cpi_yoy"]           = cpi_yoy                                    # YoY inflation: high = Fed tightening pressure
+    df["cpi_yoy"]           = cpi_yoy                                    # kept for real_fedfunds; not a model feature (collinear with real_fedfunds)
     df["real_fedfunds"]     = df["fedfunds"] - cpi_yoy                   # positive = restrictive policy
+    df["cpi_accel"]         = cpi_yoy.diff(3)                            # 3m change in YoY inflation: positive = accelerating → Fed pressure → recession risk
 
     # --- COMPOSITE FEATURES ---
     # Individual features are linear inputs; composites capture interactions and breadth
@@ -113,7 +114,7 @@ FEATURES = [
     "permits_chg", "payrolls_chg", "real_pi_chg", "mfg_trade_chg",
     "sentiment_chg", "fedfunds_chg", "real_fedfunds",
     "financial_stress", "real_activity", "yield_momentum", "stress_breadth",
-    "cpi_yoy",
+    "cpi_accel",
 ]
 
 def train(df: pd.DataFrame):

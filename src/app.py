@@ -179,7 +179,7 @@ FEATURE_LABELS = {
     "yield_momentum":    "Yield Curve Momentum",
     "stress_breadth":    "Stress Breadth (0–7)",
     "vci_signal":        "VCI Signal (Zandi)",
-    "cpi_yoy":           "CPI Inflation (YoY)",
+    "cpi_accel":         "CPI Inflation Acceleration (3m)",
 }
 
 SIGNAL_THRESHOLDS = {
@@ -200,7 +200,7 @@ SIGNAL_THRESHOLDS = {
     "yield_momentum":     (0,           "No change"),
     "stress_breadth":     (5,           "High stress (5+ signals)"),
     "vci_signal":         (1,           "Zandi threshold (1 pp)"),
-    "cpi_yoy":            (4,           "High inflation threshold (~4%)"),
+    "cpi_accel":          (0,           "Inflation accelerating"),
 }
 
 
@@ -469,7 +469,7 @@ if scaler_params:
             "overrides": {
                 "yield_spread": 1.5, "credit_spread": 1.2, "indpro_chg": 4.0,
                 "payrolls_chg": 2.5, "fedfunds_chg": -1.0, "real_fedfunds": 0.5,
-                "cpi_yoy": 2.0, "sentiment_chg": 12.0, "financial_stress": -0.3,
+                "cpi_accel": 0.0, "sentiment_chg": 12.0, "financial_stress": -0.3,
                 "real_activity": 4.0, "stress_breadth": 0, "permits_chg": 8.0,
             },
         },
@@ -478,7 +478,7 @@ if scaler_params:
             "overrides": {
                 "yield_spread": 0.5, "credit_spread": 1.8, "indpro_chg": 1.5,
                 "payrolls_chg": 1.2, "fedfunds_chg": -1.5, "real_fedfunds": 1.0,
-                "cpi_yoy": 2.5, "sentiment_chg": 5.0, "financial_stress": 1.3,
+                "cpi_accel": -0.5, "sentiment_chg": 5.0, "financial_stress": 1.3,
                 "real_activity": 1.5, "stress_breadth": 1, "permits_chg": 3.0,
             },
         },
@@ -487,7 +487,7 @@ if scaler_params:
             "overrides": {
                 "yield_spread": 0.0, "credit_spread": 2.5, "indpro_chg": -1.5,
                 "payrolls_chg": 0.3, "fedfunds_chg": 3.0, "real_fedfunds": -1.5,
-                "cpi_yoy": 7.0, "sentiment_chg": -20.0, "financial_stress": 2.5,
+                "cpi_accel": 1.5, "sentiment_chg": -20.0, "financial_stress": 2.5,
                 "real_activity": 0.2, "stress_breadth": 4, "permits_chg": -5.0,
             },
         },
@@ -496,7 +496,7 @@ if scaler_params:
             "overrides": {
                 "yield_spread": -0.5, "credit_spread": 2.8, "indpro_chg": -3.0,
                 "payrolls_chg": -0.8, "fedfunds_chg": -2.0, "real_fedfunds": -0.5,
-                "cpi_yoy": 3.5, "sentiment_chg": -15.0, "financial_stress": 3.3,
+                "cpi_accel": -0.5, "sentiment_chg": -15.0, "financial_stress": 3.3,
                 "real_activity": -3.3, "stress_breadth": 5, "permits_chg": -10.0,
             },
         },
@@ -505,7 +505,7 @@ if scaler_params:
             "overrides": {
                 "yield_spread": -1.2, "credit_spread": 4.5, "indpro_chg": -9.0,
                 "payrolls_chg": -3.5, "fedfunds_chg": -4.0, "real_fedfunds": -2.0,
-                "cpi_yoy": 1.5, "sentiment_chg": -30.0, "financial_stress": 5.7,
+                "cpi_accel": -2.0, "sentiment_chg": -30.0, "financial_stress": 5.7,
                 "real_activity": -9.7, "stress_breadth": 7, "permits_chg": -25.0,
             },
         },
@@ -539,8 +539,9 @@ if scaler_params:
         with byo_c1:
             byo_overrides["yield_spread"]  = st.slider(
                 "Yield curve (10Y–3M spread, pp)", -3.0, 3.0, float(latest["yield_spread"]), 0.1)
-            byo_overrides["cpi_yoy"]       = st.slider(
-                "Inflation (CPI YoY %)", 0.0, 12.0, float(latest["cpi_yoy"]), 0.1)
+            byo_overrides["cpi_accel"]     = st.slider(
+                "Inflation acceleration (3m change in CPI YoY, pp)", -3.0, 3.0,
+                float(latest["cpi_accel"]) if "cpi_accel" in latest.index else 0.0, 0.1)
             byo_overrides["payrolls_chg"]  = st.slider(
                 "Payroll growth (YoY %)", -4.0, 4.0, float(latest["payrolls_chg"]), 0.1)
         with byo_c2:
@@ -575,7 +576,7 @@ if scaler_params:
             )
         byo_share = (
             f"Scenario — yield curve: {byo_overrides['yield_spread']:+.1f}pp, "
-            f"inflation: {byo_overrides['cpi_yoy']:.1f}%, "
+            f"CPI accel: {byo_overrides['cpi_accel']:+.1f} pp, "
             f"payrolls: {byo_overrides['payrolls_chg']:+.1f}%, "
             f"Fed change: {byo_overrides['fedfunds_chg']:+.1f}pp → "
             f"recession probability = {byo_prob:.1f}% — recession-chance.com"
@@ -1161,7 +1162,7 @@ if scaler_params:
         "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "mfg_trade_chg", "real_activity"],
         "Labour":          ["payrolls_chg", "real_pi_chg", "stress_breadth"],
         "Consumer":        ["sentiment_chg"],
-        "Inflation":       ["cpi_yoy"],
+        "Inflation":       ["cpi_accel"],
         "Monetary policy": ["fedfunds_chg", "real_fedfunds"],
     }
     GROUP_COLORS = {
@@ -1280,9 +1281,11 @@ signal_card(cols4[0], "real_pi_chg",    "Personal Income (ex-transfers)", f"{lat
 signal_card(cols4[1], "mfg_trade_chg",  "Mfg & Trade Sales",   f"{latest['mfg_trade_chg']:+.1f}% YoY",
             stress=latest["mfg_trade_chg"] < 0, importance=imp.get("mfg_trade_chg", 0),
             note="CEI component")
-signal_card(cols4[2], "cpi_yoy",         "CPI Inflation",        f"{latest['cpi_yoy']:+.1f}% YoY",
-            stress=latest["cpi_yoy"] > 4, importance=imp.get("cpi_yoy", 0),
-            note="High" if latest["cpi_yoy"] > 4 else "Normal")
+signal_card(cols4[2], "cpi_accel",       "CPI Inflation",
+            f"{latest['cpi_yoy']:+.1f}% YoY · accel {latest['cpi_accel']:+.1f} pp" if "cpi_accel" in latest.index else f"{latest['cpi_yoy']:+.1f}% YoY",
+            stress="cpi_accel" in latest.index and latest["cpi_accel"] > 0,
+            importance=imp.get("cpi_accel", 0),
+            note="Rising" if "cpi_accel" in latest.index and latest["cpi_accel"] > 0 else "Falling/stable")
 
 st.divider()
 
