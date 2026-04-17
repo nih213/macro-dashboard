@@ -772,6 +772,148 @@ with st.expander("Model accuracy at each recession", expanded=False):
 
 st.divider()
 
+# ── SCENARIO EXPLORER ─────────────────────────────────────────────────────────
+st.subheader("Scenario Explorer")
+st.caption(
+    "How would recession probability change under different macro environments? "
+    "Pick a named scenario or build your own."
+)
+
+if scaler_params:
+    def _scenario_prob(overrides: dict) -> float:
+        log_odds = intercept
+        for feat in FEATURES:
+            val = overrides.get(feat, float(latest[feat]))
+            z   = (val - scaler_params[feat]["mean"]) / scaler_params[feat]["scale"]
+            log_odds += coefs.get(feat, 0) * z
+        return 1 / (1 + np.exp(-log_odds)) * 100
+
+    _SCENARIOS = {
+        "Boom": {
+            "description": "Goldilocks: strong growth, low inflation",
+            "overrides": {
+                "yield_spread": 1.5, "credit_spread": 1.2, "indpro_chg": 4.0,
+                "payrolls_chg": 2.5, "fedfunds_chg": -1.0, "real_fedfunds": 0.5,
+                "cpi_yoy": 2.0, "sentiment_chg": 12.0, "financial_stress": -0.3,
+                "real_activity": 4.0, "stress_breadth": 0, "permits_chg": 8.0,
+            },
+        },
+        "Soft Landing": {
+            "description": "Fed tames inflation without triggering recession",
+            "overrides": {
+                "yield_spread": 0.5, "credit_spread": 1.8, "indpro_chg": 1.5,
+                "payrolls_chg": 1.2, "fedfunds_chg": -1.5, "real_fedfunds": 1.0,
+                "cpi_yoy": 2.5, "sentiment_chg": 5.0, "financial_stress": 1.3,
+                "real_activity": 1.5, "stress_breadth": 1, "permits_chg": 3.0,
+            },
+        },
+        "Stagflation": {
+            "description": "High inflation + stagnant growth, Fed stuck",
+            "overrides": {
+                "yield_spread": 0.0, "credit_spread": 2.5, "indpro_chg": -1.5,
+                "payrolls_chg": 0.3, "fedfunds_chg": 3.0, "real_fedfunds": -1.5,
+                "cpi_yoy": 7.0, "sentiment_chg": -20.0, "financial_stress": 2.5,
+                "real_activity": 0.2, "stress_breadth": 4, "permits_chg": -5.0,
+            },
+        },
+        "Mild Recession": {
+            "description": "Unemployment rises to ~5.5%, shallow contraction",
+            "overrides": {
+                "yield_spread": -0.5, "credit_spread": 2.8, "indpro_chg": -3.0,
+                "payrolls_chg": -0.8, "fedfunds_chg": -2.0, "real_fedfunds": -0.5,
+                "cpi_yoy": 3.5, "sentiment_chg": -15.0, "financial_stress": 3.3,
+                "real_activity": -3.3, "stress_breadth": 5, "permits_chg": -10.0,
+            },
+        },
+        "Severe Recession": {
+            "description": "2008-style crisis, unemployment peaks above 8%",
+            "overrides": {
+                "yield_spread": -1.2, "credit_spread": 4.5, "indpro_chg": -9.0,
+                "payrolls_chg": -3.5, "fedfunds_chg": -4.0, "real_fedfunds": -2.0,
+                "cpi_yoy": 1.5, "sentiment_chg": -30.0, "financial_stress": 5.7,
+                "real_activity": -9.7, "stress_breadth": 7, "permits_chg": -25.0,
+            },
+        },
+    }
+
+    sc_cols = st.columns(len(_SCENARIOS))
+    for col, (sc_name, sc_data) in zip(sc_cols, _SCENARIOS.items()):
+        sc_prob  = _scenario_prob(sc_data["overrides"])
+        sc_delta = sc_prob - current_prob
+        sc_color = "#22c55e" if sc_prob < 20 else "#eab308" if sc_prob < 50 else "#ef4444"
+        d_color  = "#ef4444" if sc_delta > 0 else "#22c55e"
+        with col:
+            st.markdown(
+                f"<div style='padding:14px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:12px; font-weight:600; color:#1e293b; margin-bottom:4px'>{sc_name}</div>"
+                f"<div style='font-size:28px; font-weight:800; color:{sc_color}; line-height:1.1'>{sc_prob:.0f}%</div>"
+                f"<div style='font-size:12px; color:{d_color}; margin-bottom:6px'>"
+                f"{'▲' if sc_delta > 0 else '▼'} {abs(sc_delta):.1f} pp vs current</div>"
+                f"<div style='font-size:11px; color:#94a3b8'>{sc_data['description']}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    with st.expander("Build your own scenario", expanded=False):
+        st.caption("Adjust the five most impactful variables and see the model respond in real time.")
+        byo_c1, byo_c2 = st.columns(2)
+        byo_overrides = {}
+        with byo_c1:
+            byo_overrides["yield_spread"]  = st.slider(
+                "Yield curve (10Y–3M spread, pp)", -3.0, 3.0, float(latest["yield_spread"]), 0.1)
+            byo_overrides["cpi_yoy"]       = st.slider(
+                "Inflation (CPI YoY %)", 0.0, 12.0, float(latest["cpi_yoy"]), 0.1)
+            byo_overrides["payrolls_chg"]  = st.slider(
+                "Payroll growth (YoY %)", -4.0, 4.0, float(latest["payrolls_chg"]), 0.1)
+        with byo_c2:
+            byo_overrides["fedfunds_chg"]  = st.slider(
+                "Fed rate change (YoY pp)", -5.0, 5.0, float(latest["fedfunds_chg"]), 0.1)
+            byo_overrides["credit_spread"] = st.slider(
+                "Credit spread (Baa–10Y, pp)", 0.5, 6.0, float(latest["credit_spread"]), 0.1)
+
+        byo_prob  = _scenario_prob(byo_overrides)
+        byo_delta = byo_prob - current_prob
+        byo_color = "#22c55e" if byo_prob < 20 else "#eab308" if byo_prob < 50 else "#ef4444"
+        byo_d_col = "#ef4444" if byo_delta > 0 else "#22c55e"
+
+        byo_r1, byo_r2, _ = st.columns([1, 1, 2])
+        with byo_r1:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; margin-bottom:4px'>Your Scenario</div>"
+                f"<div style='font-size:40px; font-weight:800; color:{byo_color}'>{byo_prob:.1f}%</div>"
+                f"<div style='font-size:13px; color:{byo_d_col}'>{'▲' if byo_delta > 0 else '▼'} {abs(byo_delta):.1f} pp vs current</div>"
+                f"</div>", unsafe_allow_html=True,
+            )
+        with byo_r2:
+            st.markdown(
+                f"<div style='padding:16px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; margin-bottom:4px'>Current</div>"
+                f"<div style='font-size:40px; font-weight:800; color:{prob_color}'>{current_prob:.1f}%</div>"
+                f"<div style='font-size:13px; color:#94a3b8'>baseline</div>"
+                f"</div>", unsafe_allow_html=True,
+            )
+        byo_share = (
+            f"Scenario — yield curve: {byo_overrides['yield_spread']:+.1f}pp, "
+            f"inflation: {byo_overrides['cpi_yoy']:.1f}%, "
+            f"payrolls: {byo_overrides['payrolls_chg']:+.1f}%, "
+            f"Fed change: {byo_overrides['fedfunds_chg']:+.1f}pp → "
+            f"recession probability = {byo_prob:.1f}% — recession-chance.com"
+        )
+        st.markdown("<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+                    "letter-spacing:0.05em; margin-top:12px; margin-bottom:4px'>Share this scenario</div>",
+                    unsafe_allow_html=True)
+        st.code(byo_share, language=None)
+else:
+    st.info("Rebuild the cache to enable the scenario explorer.")
+
+st.divider()
+
 # ── WHAT-IF SCENARIO TOOL ─────────────────────────────────────────────────────
 with st.expander("What-If Scenario Analysis", expanded=False):
     st.caption(
