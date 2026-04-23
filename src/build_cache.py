@@ -297,8 +297,9 @@ def build():
     contributions_alt  = {FEATURES_ALT[i]: float(current_scaled_alt[i] * model_alt.coef_[0][i])
                           for i in range(len(FEATURES_ALT))}
 
+    _main_prob = float(prob_series.iloc[-1])
     print(f"  Alt model 3m: {prob_series_alt.iloc[-1]:.1f}%  "
-          f"(vs main: {prob:.1f}%,  Δ = {prob_series_alt.iloc[-1] - prob:+.1f} pp)")
+          f"(vs main: {_main_prob:.1f}%,  Δ = {prob_series_alt.iloc[-1] - _main_prob:+.1f} pp)")
 
     cache = dict(
         prob_series=prob_series,
