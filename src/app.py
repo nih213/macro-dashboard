@@ -365,7 +365,7 @@ with summary_col:
                     annotation_font_color="rgba(249,115,22,0.8)")
     spark.update_layout(
         height=180,
-        margin=dict(l=0, r=70, t=4, b=0),
+        margin=dict(l=0, r=130, t=4, b=0),
         xaxis=dict(showgrid=False, tickformat="%b '%y", tickangle=-30, tickfont=dict(size=10)),
         yaxis=dict(range=[0, max(40, float(recent.max()) * 1.3)], showgrid=False,
                    ticksuffix="%", tickfont=dict(size=10)),
@@ -374,6 +374,11 @@ with summary_col:
     )
     st.markdown("<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px'>12-Month Trend</div>", unsafe_allow_html=True)
     st.plotly_chart(spark, use_container_width=True)
+    st.caption(
+        f"Orange threshold = danger zone ({danger_threshold}%). "
+        "Set at the probability that maximises F1 score — the precision/recall "
+        "trade-off — on out-of-sample walk-forward predictions."
+    )
 
     # Auto-generated plain-English summary
     if contributions:
@@ -411,63 +416,120 @@ with summary_col:
             unsafe_allow_html=True,
         )
 
-    # Key drivers: top 3 signals by absolute contribution to current reading
-    if contributions:
-        top3 = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
-        st.markdown(
-            "<div style='font-size:12px; color:#94a3b8; text-transform:uppercase; "
-            "letter-spacing:0.05em; margin-bottom:8px'>Top Drivers Right Now</div>",
-            unsafe_allow_html=True,
-        )
-        driver_cols = st.columns(3)
-        for i, (feat, contrib) in enumerate(top3):
-            arrow  = "▲" if contrib > 0 else "▼"
-            color  = "#ef4444" if contrib > 0 else "#22c55e"
-            label  = FEATURE_LABELS.get(feat, feat)
-            with driver_cols[i]:
-                st.markdown(
-                    f"<div style='padding:10px 12px; border-radius:8px; background:#f8fafc; "
-                    f"border-left:3px solid {color}; text-align:center'>"
-                    f"<div style='font-size:11px; color:#94a3b8; margin-bottom:4px'>{label}</div>"
-                    f"<div style='font-size:18px; font-weight:700; color:{color}'>"
-                    f"{arrow} {abs(contrib):.2f}</div>"
-                    f"<div style='font-size:10px; color:#94a3b8'>log-odds contribution</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
 
 # ── FORECAST PATH ─────────────────────────────────────────────────────────────
 if prob_series_6m is not None and prob_series_12m is not None:
     current_prob_6m  = float(prob_series_6m.iloc[-1])
     current_prob_12m = float(prob_series_12m.iloc[-1])
 
-    def _path_color(p):
+    d_6_3  = current_prob_6m  - current_prob
+    d_12_6 = current_prob_12m - current_prob_6m
+    d_12_3 = current_prob_12m - current_prob
+
+    def _fp_color(p):
         return "#22c55e" if p < 20 else "#eab308" if p < 50 else "#ef4444"
 
-    fp_cols = st.columns(3)
-    for fp_col, (label, p, hdate) in zip(fp_cols, [
-        ("3 months",  current_prob,
-         (latest_date + pd.DateOffset(months=3)).strftime("%b %Y")),
-        ("6 months",  current_prob_6m,
-         (latest_date + pd.DateOffset(months=6)).strftime("%b %Y")),
-        ("12 months", current_prob_12m,
-         (latest_date + pd.DateOffset(months=12)).strftime("%b %Y")),
+    def _fp_arrow(diff):
+        if diff > 5:  return "↗", "#ef4444"
+        if diff < -5: return "↘", "#22c55e"
+        return "→", "#94a3b8"
+
+    arr1_sym, arr1_col = _fp_arrow(d_6_3)
+    arr2_sym, arr2_col = _fp_arrow(d_12_6)
+
+    if d_12_3 > 10:
+        trend_text  = (f"<strong>Risk building</strong> over the horizon — "
+                       f"the 12-month reading is <strong>{d_12_3:+.1f} pp</strong> above "
+                       f"the 3-month reading, suggesting conditions may deteriorate further.")
+        trend_border = "#ef4444"
+    elif d_12_3 < -10:
+        trend_text  = (f"<strong>Risk fading</strong> over the horizon — "
+                       f"the 12-month reading is <strong>{d_12_3:+.1f} pp</strong> relative "
+                       f"to the 3-month reading, suggesting near-term stress may ease.")
+        trend_border = "#22c55e"
+    else:
+        trend_text  = (f"<strong>Risk broadly stable</strong> across horizons — "
+                       f"the 3-month and 12-month readings are within "
+                       f"<strong>{abs(d_12_3):.1f} pp</strong> of each other.")
+        trend_border = "#94a3b8"
+
+    st.markdown(
+        "<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+        "letter-spacing:0.05em; margin-bottom:8px'>Recession Probability Path</div>",
+        unsafe_allow_html=True,
+    )
+    fp_cols = st.columns([6, 1, 6, 1, 6])
+    for idx, (label, p, hdate) in enumerate([
+        ("3 months out",  current_prob,     (latest_date + pd.DateOffset(months=3)).strftime("%b %Y")),
+        ("6 months out",  current_prob_6m,  (latest_date + pd.DateOffset(months=6)).strftime("%b %Y")),
+        ("12 months out", current_prob_12m, (latest_date + pd.DateOffset(months=12)).strftime("%b %Y")),
     ]):
-        c = _path_color(p)
-        with fp_col:
+        c = _fp_color(p)
+        with fp_cols[idx * 2]:
             st.markdown(
-                f"<div style='padding:14px; border-radius:8px; background:#f8fafc; "
+                f"<div style='padding:18px 16px; border-radius:10px; background:#f8fafc; "
                 f"border:1px solid #e2e8f0; text-align:center'>"
                 f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
-                f"letter-spacing:0.05em; margin-bottom:4px'>"
-                f"Recession probability · {label} out</div>"
-                f"<div style='font-size:32px; font-weight:800; color:{c}; line-height:1.1'>"
+                f"letter-spacing:0.05em; margin-bottom:6px'>{label}</div>"
+                f"<div style='font-size:38px; font-weight:800; color:{c}; line-height:1.1'>"
                 f"{p:.1f}%</div>"
-                f"<div style='font-size:11px; color:#94a3b8; margin-top:4px'>by {hdate}</div>"
+                f"<div style='font-size:11px; color:#94a3b8; margin-top:6px'>by {hdate}</div>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
-    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        if idx < 2:
+            sym, col = (arr1_sym, arr1_col) if idx == 0 else (arr2_sym, arr2_col)
+            diff     = d_6_3 if idx == 0 else d_12_6
+            with fp_cols[idx * 2 + 1]:
+                st.markdown(
+                    f"<div style='text-align:center; padding-top:30px'>"
+                    f"<div style='font-size:22px; color:{col}'>{sym}</div>"
+                    f"<div style='font-size:10px; color:#94a3b8; margin-top:2px'>{diff:+.1f} pp</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+    st.markdown(
+        f"<div style='margin-top:10px; padding:10px 14px; border-radius:8px; "
+        f"background:#f8fafc; border-left:3px solid {trend_border}; "
+        f"font-size:13px; color:#475569; line-height:1.5'>{trend_text}</div>",
+        unsafe_allow_html=True,
+    )
+
+# ── TOP DRIVERS ───────────────────────────────────────────────────────────────
+if contributions:
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+        "letter-spacing:0.05em; margin-bottom:4px'>Top Drivers Right Now</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "The three indicators with the largest log-odds contribution to the current reading. "
+        "Positive = pushing recession probability up; negative = pulling it down."
+    )
+    top3 = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+    driver_cols = st.columns(3)
+    for i, (feat, contrib) in enumerate(top3):
+        arrow = "▲" if contrib > 0 else "▼"
+        color = "#ef4444" if contrib > 0 else "#22c55e"
+        label = FEATURE_LABELS.get(feat, feat)
+        val_str = f"{float(latest[feat]):+.2f}" if feat in latest.index else "—"
+        with driver_cols[i]:
+            st.markdown(
+                f"<div style='padding:18px 16px; border-radius:10px; background:#f8fafc; "
+                f"border-left:4px solid {color}'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+                f"letter-spacing:0.05em; margin-bottom:6px'>{label}</div>"
+                f"<div style='font-size:28px; font-weight:800; color:{color}; line-height:1.1'>"
+                f"{arrow} {abs(contrib):.2f}</div>"
+                f"<div style='font-size:11px; color:#94a3b8; margin-top:4px'>log-odds contribution</div>"
+                f"<div style='margin-top:10px; padding-top:8px; border-top:1px solid #e2e8f0; "
+                f"font-size:12px; color:#64748b'>Current value: "
+                f"<strong>{val_str}</strong></div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
 # ── SHARE ─────────────────────────────────────────────────────────────────────
 share_text = (f"US recession probability: {current_prob:.1f}% by "
