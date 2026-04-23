@@ -15,7 +15,7 @@ from sklearn.metrics import precision_score, recall_score
 
 sys.path.insert(0, os.path.dirname(__file__))
 from fetch import fetch_all, fetch_state_unemployment
-from model import build_dataset, train, FEATURES, feature_importances, walk_forward_predict
+from model import build_dataset, train, FEATURES, FEATURES_ALT, feature_importances, walk_forward_predict
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 CACHE_PATH   = os.path.join(PROJECT_ROOT, "data", "cache.pkl")
@@ -268,6 +268,38 @@ def build():
     # Data freshness: last observation date per raw FRED series
     data_freshness = {name: s.dropna().index[-1].strftime("%b %Y") for name, s in data.items()}
 
+    # --- ALTERNATIVE MODEL (EPU-augmented) ---
+    print("Training alternative model with EPU features (3m / 6m / 12m)...")
+    scaler_alt,     model_alt     = train(df, horizon=3,  features=FEATURES_ALT)
+    scaler_alt_6m,  model_alt_6m  = train(df, horizon=6,  features=FEATURES_ALT)
+    scaler_alt_12m, model_alt_12m = train(df, horizon=12, features=FEATURES_ALT)
+    print(f"  Alt C — 3m: {model_alt.C_[0]:.4f}  |  6m: {model_alt_6m.C_[0]:.4f}  |  12m: {model_alt_12m.C_[0]:.4f}")
+
+    prob_series_alt = pd.Series(
+        model_alt.predict_proba(scaler_alt.transform(df[FEATURES_ALT]))[:, 1] * 100,
+        index=df.index, name="prob_alt",
+    )
+    prob_series_alt_6m = pd.Series(
+        model_alt_6m.predict_proba(scaler_alt_6m.transform(df[FEATURES_ALT]))[:, 1] * 100,
+        index=df.index, name="prob_alt_6m",
+    )
+    prob_series_alt_12m = pd.Series(
+        model_alt_12m.predict_proba(scaler_alt_12m.transform(df[FEATURES_ALT]))[:, 1] * 100,
+        index=df.index, name="prob_alt_12m",
+    )
+
+    coefs_alt     = dict(zip(FEATURES_ALT, model_alt.coef_[0]))
+    intercept_alt = float(model_alt.intercept_[0])
+    importances_alt = feature_importances(model_alt, FEATURES_ALT)
+    scaler_params_alt = {feat: {"mean": float(scaler_alt.mean_[i]), "scale": float(scaler_alt.scale_[i])}
+                         for i, feat in enumerate(FEATURES_ALT)}
+    current_scaled_alt = scaler_alt.transform(df[FEATURES_ALT].iloc[[-1]])[0]
+    contributions_alt  = {FEATURES_ALT[i]: float(current_scaled_alt[i] * model_alt.coef_[0][i])
+                          for i in range(len(FEATURES_ALT))}
+
+    print(f"  Alt model 3m: {prob_series_alt.iloc[-1]:.1f}%  "
+          f"(vs main: {prob:.1f}%,  Δ = {prob_series_alt.iloc[-1] - prob:+.1f} pp)")
+
     cache = dict(
         prob_series=prob_series,
         prob_series_6m=prob_series_6m,
@@ -295,6 +327,15 @@ def build():
         last_built=pd.Timestamp.now().strftime("%Y-%m-%d"),
         outcome_summary=outcome_summary,
         state_data=state_data,
+        # Alternative model entries
+        prob_series_alt=prob_series_alt,
+        prob_series_alt_6m=prob_series_alt_6m,
+        prob_series_alt_12m=prob_series_alt_12m,
+        coefs_alt=coefs_alt,
+        intercept_alt=intercept_alt,
+        importances_alt=importances_alt,
+        scaler_params_alt=scaler_params_alt,
+        contributions_alt=contributions_alt,
     )
 
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)

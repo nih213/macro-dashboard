@@ -39,6 +39,9 @@ SERIES = {
     "cpi":         "CPIAUCSL",        # CPI All Items — for real FFR and inflation feature — starts 1947
     "unrate":      "UNRATE",          # Unemployment rate — for outcome calculator — starts 1948
     "recession":   "USREC",           # NBER recession indicator: 1 = recession, 0 = expansion
+    # Policy & uncertainty (used only in the alternative model page)
+    "epu_news":    "USEPUNEWSINDXM",  # News-based Economic Policy Uncertainty (Baker, Bloom & Davis) — monthly, starts 1900
+    "epu_trade":   "EPUTRADE",        # Trade Policy Uncertainty categorical index — monthly, starts 1985
 }
 
 # %%

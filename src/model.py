@@ -91,13 +91,22 @@ def build_dataset(data: dict) -> pd.DataFrame:
     vci_3m          = vci.rolling(3).mean()
     df["vci_signal"] = (vci_3m - vci_3m.rolling(12).min()) * 100
 
+    # --- POLICY & UNCERTAINTY FEATURES (alternative model only) ---
+    # Both columns are always computed and kept in df so the alternative model can use them.
+    # The main FEATURES list does not include them; they appear only in FEATURES_ALT.
+    df["epu_news_level"]  = df["epu_news"].rolling(3, min_periods=1).mean()
+    # Trade Policy Uncertainty starts 1985; fill pre-1985 with long-run mean so the
+    # standardiser maps those rows to ≈ 0 ("average"), preserving full training history.
+    trade_mean = df["epu_trade"].dropna().mean()
+    df["epu_trade_level"] = df["epu_trade"].rolling(3, min_periods=1).mean().fillna(trade_mean)
+
     # TARGET columns: one model per horizon (direct multi-step forecasting).
     # At each row t, target_h = "will we be in recession at t+h?"
     df["target"]     = df["recession"].shift(-3)
     df["target_6m"]  = df["recession"].shift(-6)
     df["target_12m"] = df["recession"].shift(-12)
 
-    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession"])
+    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession", "epu_news", "epu_trade"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.
@@ -123,7 +132,10 @@ FEATURES = [
     "cpi_accel",
 ]
 
-def train(df: pd.DataFrame, horizon: int = 3):
+# Alternative model adds news-based and trade-specific policy uncertainty.
+FEATURES_ALT = FEATURES + ["epu_news_level", "epu_trade_level"]
+
+def train(df: pd.DataFrame, horizon: int = 3, features: list = None):
     """Fit a regularisation-tuned logistic regression via time-series CV.
 
     Uses LogisticRegressionCV with TimeSeriesSplit so the penalty strength C is
@@ -132,9 +144,11 @@ def train(df: pd.DataFrame, horizon: int = 3):
     inflation of the CV score.
     Returns (scaler, model).
     """
+    if features is None:
+        features = FEATURES
     target_col = "target" if horizon == 3 else f"target_{horizon}m"
     df_train = df[df[target_col].notna()]
-    X = df_train[FEATURES]
+    X = df_train[features]
     y = df_train[target_col]
 
     scaler = StandardScaler()
@@ -187,11 +201,13 @@ def current_probability(df: pd.DataFrame, scaler, model) -> float:
 
 # %%
 # --- FEATURE IMPORTANCES ---
-def feature_importances(model) -> dict:
+def feature_importances(model, features: list = None) -> dict:
     """Relative importance of each feature as % of total absolute coefficient mass."""
+    if features is None:
+        features = FEATURES
     abs_coefs = np.abs(model.coef_[0])
     return {feat: abs_coefs[i] / abs_coefs.sum() * 100
-            for i, feat in enumerate(FEATURES)}
+            for i, feat in enumerate(features)}
 
 
 # %%
@@ -200,8 +216,11 @@ def feature_importances(model) -> dict:
 # This is the academically honest approach (Stock & Watson 1999): no look-ahead bias.
 # In-sample metrics overstate performance because the model has seen the answers.
 
-def walk_forward_predict(df: pd.DataFrame, min_train: int = 60, horizon: int = 3) -> pd.Series:
+def walk_forward_predict(df: pd.DataFrame, min_train: int = 60, horizon: int = 3,
+                         features: list = None) -> pd.Series:
     """Expanding-window OOS predictions. min_train = minimum months before first prediction."""
+    if features is None:
+        features = FEATURES
     target_col = "target" if horizon == 3 else f"target_{horizon}m"
     results = {}
     for i in range(min_train, len(df)):
@@ -211,10 +230,10 @@ def walk_forward_predict(df: pd.DataFrame, min_train: int = 60, horizon: int = 3
         if train_df[target_col].sum() < 5:
             continue
         sc = StandardScaler()
-        X_tr = sc.fit_transform(train_df[FEATURES])
+        X_tr = sc.fit_transform(train_df[features])
         m = LogisticRegression(random_state=42, max_iter=1000)
         m.fit(X_tr, train_df[target_col])
-        X_pr = sc.transform(df.iloc[[i]][FEATURES])
+        X_pr = sc.transform(df.iloc[[i]][features])
         results[df.index[i]] = m.predict_proba(X_pr)[0, 1] * 100
     return pd.Series(results, name=f"oos_prob_{horizon}m")
 
