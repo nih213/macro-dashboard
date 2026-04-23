@@ -182,8 +182,6 @@ FEATURE_LABELS = {
     "stress_breadth":    "Stress Breadth (0–7)",
     "vci_signal":        "VCI Signal (Zandi)",
     "cpi_accel":         "CPI Inflation Acceleration (3m)",
-    "epu_news_level":    "Policy Uncertainty (News-based)",
-    "epu_trade_level":   "Trade Policy Uncertainty",
 }
 
 SIGNAL_THRESHOLDS = {
@@ -205,8 +203,6 @@ SIGNAL_THRESHOLDS = {
     "stress_breadth":     (5,           "High stress (5+ signals)"),
     "vci_signal":         (1,           "Zandi threshold (1 pp)"),
     "cpi_accel":          (0,           "Inflation accelerating"),
-    "epu_news_level":     (None,        ""),   # long-run mean set at runtime
-    "epu_trade_level":    (None,        ""),   # long-run mean set at runtime
 }
 
 
@@ -223,9 +219,6 @@ def signal_dialog(feature_key):
     # credit_spread threshold is dynamic (historical mean)
     if feature_key == "credit_spread":
         thresh, thresh_label = credit_mean, f"Historical avg ({credit_mean:.2f} pp)"
-    if feature_key in ("epu_news_level", "epu_trade_level") and feature_key in df_history.columns:
-        m = float(df_history[feature_key].dropna().mean())
-        thresh, thresh_label = m, f"Historical avg ({m:.0f})"
 
     sf = go.Figure()
     add_recession_shading(sf, recession, label_first=True)
@@ -1273,7 +1266,6 @@ if scaler_params:
         "Consumer":        ["sentiment_chg"],
         "Inflation":       ["cpi_accel"],
         "Monetary policy": ["fedfunds_chg", "real_fedfunds"],
-        "Policy uncertainty": ["epu_news_level", "epu_trade_level"],
     }
     GROUP_COLORS = {
         "Yield curve":     "#2563eb",
@@ -1397,21 +1389,6 @@ signal_card(cols4[2], "cpi_accel",       "CPI Inflation",
             importance=imp.get("cpi_accel", 0),
             note="Rising" if "cpi_accel" in latest.index and latest["cpi_accel"] > 0 else "Falling/stable")
 
-st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-cols5 = st.columns(4)
-_epu_news_mean  = float(df_history["epu_news_level"].dropna().mean())  if "epu_news_level"  in df_history.columns else 100.0
-_epu_trade_mean = float(df_history["epu_trade_level"].dropna().mean()) if "epu_trade_level" in df_history.columns else 100.0
-signal_card(cols5[0], "epu_news_level",  "Policy Uncertainty (EPU)",
-            f"{latest['epu_news_level']:.0f}" if "epu_news_level" in latest.index else "—",
-            stress="epu_news_level" in latest.index and latest["epu_news_level"] > _epu_news_mean,
-            importance=imp.get("epu_news_level", 0),
-            note="Elevated" if "epu_news_level" in latest.index and latest["epu_news_level"] > _epu_news_mean else "Normal")
-signal_card(cols5[1], "epu_trade_level", "Trade Policy Uncertainty",
-            f"{latest['epu_trade_level']:.0f}" if "epu_trade_level" in latest.index else "—",
-            stress="epu_trade_level" in latest.index and latest["epu_trade_level"] > _epu_trade_mean,
-            importance=imp.get("epu_trade_level", 0),
-            note="Elevated" if "epu_trade_level" in latest.index and latest["epu_trade_level"] > _epu_trade_mean else "Normal")
-
 st.divider()
 
 # ── DATA FRESHNESS ────────────────────────────────────────────────────────────
@@ -1427,7 +1404,6 @@ if data_freshness:
         "sp500": "DJIA", "payrolls": "Nonfarm Payrolls",
         "sentiment": "Consumer Sentiment", "fedfunds": "Fed Funds Rate",
         "cpi": "CPI", "recession": "NBER Recession",
-        "epu_news": "Policy Uncertainty", "epu_trade": "Trade Policy Unc.",
     }
 
     with st.expander("Data freshness"):
