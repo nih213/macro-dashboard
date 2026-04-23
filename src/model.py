@@ -3,7 +3,8 @@ import sys
 import os
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score
 
@@ -90,16 +91,17 @@ def build_dataset(data: dict) -> pd.DataFrame:
     vci_3m          = vci.rolling(3).mean()
     df["vci_signal"] = (vci_3m - vci_3m.rolling(12).min()) * 100
 
-    # TARGET: shift recession indicator back 3 months.
-    # At each row (month t), the target = "will we be in recession at t+3?"
-    # This is what makes the model a 3-month-ahead forecast.
-    df["target"] = df["recession"].shift(-3)
+    # TARGET columns: one model per horizon (direct multi-step forecasting).
+    # At each row t, target_h = "will we be in recession at t+h?"
+    df["target"]     = df["recession"].shift(-3)
+    df["target_6m"]  = df["recession"].shift(-6)
+    df["target_12m"] = df["recession"].shift(-12)
 
     df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.
-    feature_cols = [c for c in df.columns if c != "target"]
+    feature_cols = [c for c in df.columns if not c.startswith("target")]
     df[feature_cols] = df[feature_cols].ffill()
     # Drop rows where features are still NaN (start of series, rolling windows not filled yet).
     # Keep rows where only target is NaN — those are the most recent months we predict on.
@@ -109,24 +111,45 @@ def build_dataset(data: dict) -> pd.DataFrame:
 
 # %%
 # --- TRAIN ---
+# financial_stress (= credit_spread - yield_spread) and real_activity
+# (= mean of indpro_chg, permits_chg, commodity_chg) are exact linear combinations
+# of features already in this list. Including them alongside their components
+# creates rank deficiency; coefficients become arbitrary under any linear solver.
 FEATURES = [
     "yield_spread", "credit_spread", "indpro_chg", "commodity_chg", "commodity_ma_ratio",
     "permits_chg", "payrolls_chg", "real_pi_chg", "mfg_trade_chg",
     "sentiment_chg", "fedfunds_chg", "real_fedfunds",
-    "financial_stress", "real_activity", "yield_momentum", "stress_breadth",
+    "yield_momentum", "stress_breadth",
     "cpi_accel",
 ]
 
-def train(df: pd.DataFrame):
-    """Fit a logistic regression. Returns (scaler, model)."""
-    df_train = df[df["target"].notna()]   # exclude recent rows without a known outcome
-    X = df_train[FEATURES]
-    y = df_train["target"]
+def train(df: pd.DataFrame, horizon: int = 3):
+    """Fit a regularisation-tuned logistic regression via time-series CV.
 
-    scaler = StandardScaler()   # logistic regression needs scaled inputs
+    Uses LogisticRegressionCV with TimeSeriesSplit so the penalty strength C is
+    selected on held-out data that respects temporal ordering (no future leakage).
+    A gap of 6 months between each train/test split reduces autocorrelation
+    inflation of the CV score.
+    Returns (scaler, model).
+    """
+    target_col = "target" if horizon == 3 else f"target_{horizon}m"
+    df_train = df[df[target_col].notna()]
+    X = df_train[FEATURES]
+    y = df_train[target_col]
+
+    scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    model = LogisticRegression(random_state=42, max_iter=1000)
+    tscv = TimeSeriesSplit(n_splits=5, gap=6)
+    model = LogisticRegressionCV(
+        Cs=np.logspace(-3, 2, 20),
+        cv=tscv,
+        scoring="roc_auc",
+        penalty="l2",
+        random_state=42,
+        max_iter=2000,
+        n_jobs=-1,
+    )
     model.fit(X_scaled, y)
     return scaler, model
 
@@ -177,22 +200,23 @@ def feature_importances(model) -> dict:
 # This is the academically honest approach (Stock & Watson 1999): no look-ahead bias.
 # In-sample metrics overstate performance because the model has seen the answers.
 
-def walk_forward_predict(df: pd.DataFrame, min_train: int = 60) -> pd.Series:
+def walk_forward_predict(df: pd.DataFrame, min_train: int = 60, horizon: int = 3) -> pd.Series:
     """Expanding-window OOS predictions. min_train = minimum months before first prediction."""
+    target_col = "target" if horizon == 3 else f"target_{horizon}m"
     results = {}
     for i in range(min_train, len(df)):
-        if pd.isna(df["target"].iloc[i]):   # no known outcome yet — skip for OOS eval
+        if pd.isna(df[target_col].iloc[i]):
             continue
-        train = df.iloc[:i][df.iloc[:i]["target"].notna()]   # train only on rows with known outcomes
-        if train["target"].sum() < 5:   # need enough recession months to fit reliably
+        train_df = df.iloc[:i][df.iloc[:i][target_col].notna()]
+        if train_df[target_col].sum() < 5:
             continue
         sc = StandardScaler()
-        X_tr = sc.fit_transform(train[FEATURES])
+        X_tr = sc.fit_transform(train_df[FEATURES])
         m = LogisticRegression(random_state=42, max_iter=1000)
-        m.fit(X_tr, train["target"])
+        m.fit(X_tr, train_df[target_col])
         X_pr = sc.transform(df.iloc[[i]][FEATURES])
         results[df.index[i]] = m.predict_proba(X_pr)[0, 1] * 100
-    return pd.Series(results, name="oos_prob")
+    return pd.Series(results, name=f"oos_prob_{horizon}m")
 
 
 # %%

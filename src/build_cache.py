@@ -124,13 +124,25 @@ def build():
     print("Building dataset...")
     df = build_dataset(data)
 
-    print("Training model...")
-    scaler, model = train(df)
+    print("Training models (3m / 6m / 12m) with CV-tuned regularisation...")
+    scaler,     model     = train(df, horizon=3)
+    scaler_6m,  model_6m  = train(df, horizon=6)
+    scaler_12m, model_12m = train(df, horizon=12)
+    print(f"  Best C — 3m: {model.C_[0]:.4f}  |  6m: {model_6m.C_[0]:.4f}  |  12m: {model_12m.C_[0]:.4f}")
 
-    print("In-sample predictions...")
+    print("In-sample predictions (all horizons)...")
     X_scaled    = scaler.transform(df[FEATURES])
     proba       = model.predict_proba(X_scaled)[:, 1] * 100
     prob_series = pd.Series(proba, index=df.index, name="prob")
+
+    prob_series_6m  = pd.Series(
+        model_6m.predict_proba(scaler_6m.transform(df[FEATURES]))[:, 1] * 100,
+        index=df.index, name="prob_6m",
+    )
+    prob_series_12m = pd.Series(
+        model_12m.predict_proba(scaler_12m.transform(df[FEATURES]))[:, 1] * 100,
+        index=df.index, name="prob_12m",
+    )
 
     print("Walk-forward OOS predictions (this takes a minute)...")
     oos_series = walk_forward_predict(df)
@@ -258,6 +270,8 @@ def build():
 
     cache = dict(
         prob_series=prob_series,
+        prob_series_6m=prob_series_6m,
+        prob_series_12m=prob_series_12m,
         oos_series=oos_series,
         recession=recession,
         latest=latest,
@@ -290,7 +304,9 @@ def build():
     prob = prob_series.iloc[-1]
     print(f"Cache saved to {CACHE_PATH}")
     print(f"  Dataset: {df.index[0].date()} to {df.index[-1].date()}  ({len(df)} rows)")
-    print(f"  Current recession probability: {prob:.1f}%")
+    print(f"  Recession probability — 3m: {prob:.1f}%  |  "
+          f"6m: {prob_series_6m.iloc[-1]:.1f}%  |  "
+          f"12m: {prob_series_12m.iloc[-1]:.1f}%")
     if prev_prob is not None:
         print(f"  Previous probability: {prev_prob:.1f}%  (change: {prob - prev_prob:+.1f} pp)")
     print(f"  Top analog: {analogs[0]['date']}  (recession followed: {analogs[0]['recession_12m']})")

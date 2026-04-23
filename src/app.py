@@ -50,7 +50,8 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
                 c.get("contributions"), c.get("analogs"), c.get("nyfed_series"), c.get("prev_prob"),
                 c.get("scaler_params"), c.get("data_freshness"),
                 c.get("ci_lower"), c.get("ci_upper"), c.get("last_built"),
-                c.get("outcome_summary"), c.get("state_data"))
+                c.get("outcome_summary"), c.get("state_data"),
+                c.get("prob_series_6m"), c.get("prob_series_12m"))
 
     # Fallback: compute live (local dev without a cache file)
     st.warning("No cache found — computing live. Run `python src/build_cache.py` to pre-build.")
@@ -102,7 +103,8 @@ def load(mtime=0):   # mtime as cache key: new file → cache miss → fresh loa
 
     return (prob_series, oos_series, recession, latest, credit_mean, importances,
             perf_df, targets, danger_threshold, coefs, intercept, df,
-            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None, None, None)
+            contributions_fb, None, None, None, scaler_params_fb, None, None, None, None, None, None,
+            None, None)
 
 
 def recession_periods(rec_series):
@@ -268,7 +270,7 @@ def signal_card(col, feature_key, label, value_str, stress: bool, importance: fl
 
 
 _mtime = os.path.getmtime(_CACHE_PATH) if os.path.exists(_CACHE_PATH) else 0
-prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built, outcome_summary, state_data = load(_mtime)
+prob_series, oos_series, recession, latest, credit_mean, importances, perf_df, oos_targets, danger_threshold, coefs, intercept, df_history, contributions, analogs, nyfed_series, prev_prob, scaler_params, data_freshness, ci_lower, ci_upper, last_built, outcome_summary, state_data, prob_series_6m, prob_series_12m = load(_mtime)
 
 current_prob  = prob_series.iloc[-1]
 latest_date   = prob_series.index[-1]
@@ -433,6 +435,39 @@ with summary_col:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+
+# ── FORECAST PATH ─────────────────────────────────────────────────────────────
+if prob_series_6m is not None and prob_series_12m is not None:
+    current_prob_6m  = float(prob_series_6m.iloc[-1])
+    current_prob_12m = float(prob_series_12m.iloc[-1])
+
+    def _path_color(p):
+        return "#22c55e" if p < 20 else "#eab308" if p < 50 else "#ef4444"
+
+    fp_cols = st.columns(3)
+    for fp_col, (label, p, hdate) in zip(fp_cols, [
+        ("3 months",  current_prob,
+         (latest_date + pd.DateOffset(months=3)).strftime("%b %Y")),
+        ("6 months",  current_prob_6m,
+         (latest_date + pd.DateOffset(months=6)).strftime("%b %Y")),
+        ("12 months", current_prob_12m,
+         (latest_date + pd.DateOffset(months=12)).strftime("%b %Y")),
+    ]):
+        c = _path_color(p)
+        with fp_col:
+            st.markdown(
+                f"<div style='padding:14px; border-radius:8px; background:#f8fafc; "
+                f"border:1px solid #e2e8f0; text-align:center'>"
+                f"<div style='font-size:11px; color:#94a3b8; text-transform:uppercase; "
+                f"letter-spacing:0.05em; margin-bottom:4px'>"
+                f"Recession probability · {label} out</div>"
+                f"<div style='font-size:32px; font-weight:800; color:{c}; line-height:1.1'>"
+                f"{p:.1f}%</div>"
+                f"<div style='font-size:11px; color:#94a3b8; margin-top:4px'>by {hdate}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── SHARE ─────────────────────────────────────────────────────────────────────
 share_text = (f"US recession probability: {current_prob:.1f}% by "
@@ -1163,8 +1198,8 @@ if scaler_params:
 
     FEATURE_GROUPS = {
         "Yield curve":     ["yield_spread", "yield_momentum"],
-        "Credit markets":  ["credit_spread", "financial_stress"],
-        "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "mfg_trade_chg", "real_activity"],
+        "Credit markets":  ["credit_spread"],
+        "Real activity":   ["indpro_chg", "commodity_chg", "commodity_ma_ratio", "permits_chg", "mfg_trade_chg"],
         "Labour":          ["payrolls_chg", "real_pi_chg", "stress_breadth"],
         "Consumer":        ["sentiment_chg"],
         "Inflation":       ["cpi_accel"],
