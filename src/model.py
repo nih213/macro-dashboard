@@ -91,13 +91,24 @@ def build_dataset(data: dict) -> pd.DataFrame:
     vci_3m          = vci.rolling(3).mean()
     df["vci_signal"] = (vci_3m - vci_3m.rolling(12).min()) * 100
 
+    # --- POLICY & UNCERTAINTY FEATURES (Baker, Bloom & Davis) ---
+    # News-based EPU: full history back to 1900, so no imputation needed.
+    # 3m rolling mean smooths monthly noise while preserving the level signal.
+    df["epu_news_level"]  = df["epu_news"].rolling(3, min_periods=1).mean()
+
+    # Trade Policy Uncertainty: captures tariff / import-duty uncertainty specifically.
+    # Starts 1985; pre-1985 filled with the long-run mean so the standardiser maps
+    # those rows to ≈ 0 ("average uncertainty"), preserving the full training history.
+    trade_mean = df["epu_trade"].dropna().mean()
+    df["epu_trade_level"] = df["epu_trade"].rolling(3, min_periods=1).mean().fillna(trade_mean)
+
     # TARGET columns: one model per horizon (direct multi-step forecasting).
     # At each row t, target_h = "will we be in recession at t+h?"
     df["target"]     = df["recession"].shift(-3)
     df["target_6m"]  = df["recession"].shift(-6)
     df["target_12m"] = df["recession"].shift(-12)
 
-    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession"])
+    df = df.drop(columns=["gs10", "tb3ms", "baa", "indpro", "commodity", "employment", "population", "lfpr", "permits", "sp500", "sp500_chg", "payrolls", "real_pi", "mfg_trade", "sentiment", "fedfunds", "cpi", "unrate", "recession", "epu_news", "epu_trade"])
     # Forward-fill feature columns to handle lagged FRED releases:
     # if a series hasn't published yet for the latest month(s), carry forward
     # the most recent available reading rather than dropping the whole row.
@@ -121,6 +132,8 @@ FEATURES = [
     "sentiment_chg", "fedfunds_chg", "real_fedfunds",
     "yield_momentum", "stress_breadth",
     "cpi_accel",
+    "epu_news_level",   # News-based Economic Policy Uncertainty (1900–present, no imputation)
+    "epu_trade_level",  # Trade Policy Uncertainty — captures tariff / trade-war risk (1985–present)
 ]
 
 def train(df: pd.DataFrame, horizon: int = 3):
